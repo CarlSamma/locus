@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS properties (
     prior_entropy REAL NOT NULL DEFAULT 0.0,
     state TEXT NOT NULL DEFAULT 'unknown',
     votes INTEGER NOT NULL DEFAULT 0,
+    value TEXT,
     notes TEXT DEFAULT ''
 );
 
@@ -172,27 +173,32 @@ class Database:
     async def seed_properties(self, properties: dict) -> int:
         """Insert (or refresh) property rows from a data-driven dict, e.g.
         ``{"word_count": {"weight": 2.0, "prior_entropy": 2.0}}``."""
-        rows = [
-            (
-                key,
-                meta.get("weight", 1.0),
-                meta.get("prior_entropy", 0.0),
-                meta.get("state", "unknown"),
-                meta.get("votes", 0),
-                meta.get("notes", ""),
+        rows = []
+        for key, meta in properties.items():
+            weight = meta.get("weight") or 1.0
+            entropy = meta.get("prior_entropy") if meta.get("prior_entropy") is not None else 0.0
+            rows.append(
+                (
+                    key,
+                    float(weight),
+                    float(entropy),
+                    meta.get("state", "unknown"),
+                    meta.get("votes", 0),
+                    meta.get("value", None),
+                    meta.get("notes", ""),
+                )
             )
-            for key, meta in properties.items()
-        ]
         if not rows:
             return 0
         await self.executemany(
-            """INSERT INTO properties (key, weight, prior_entropy, state, votes, notes)
-               VALUES (?, ?, ?, ?, ?, ?)
+            """INSERT INTO properties (key, weight, prior_entropy, state, votes, value, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(key) DO UPDATE SET
                  weight = excluded.weight,
                  prior_entropy = excluded.prior_entropy,
                  state = excluded.state,
                  votes = excluded.votes,
+                 value = excluded.value,
                  notes = excluded.notes""",
             rows,
         )

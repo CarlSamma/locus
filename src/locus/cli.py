@@ -4,6 +4,7 @@ Commands:
     locus status                     Show property/entropy/session summary
     locus run [--dry-run] [--max N]  Run a session (live or offline)
     locus review                     Show pending A/B follow-up options
+    locus import [--seed PATH]       Import the SSOT seed into the database
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os as _os
 import sys
 from typing import List, Optional
 
@@ -42,6 +44,14 @@ def _build_engine(config: LocusConfig, dry_run: bool):
 
 async def _seed_properties(db: Database, config: LocusConfig) -> None:
     import json as _json
+
+    # If the SSOT seed exists, import the full campaign history (all past probes)
+    seed_path = "src/locus/data/locus_seed.json"
+    if _os.path.exists(seed_path):
+        from locus.seed import import_seed, load_seed
+
+        await import_seed(db, load_seed(seed_path))
+        return
 
     with open(config.properties_path, encoding="utf-8") as f:
         props = _json.load(f)
@@ -125,6 +135,20 @@ async def _cmd_review(config: LocusConfig) -> int:
     return 0
 
 
+async def _cmd_import(config: LocusConfig, seed_path: str) -> int:
+    from locus.seed import import_seed, load_seed
+
+    db = Database()
+    await db.initialize(config.db_path)
+    seed = load_seed(seed_path)
+    counts = await import_seed(db, seed)
+    print(f"imported from {seed_path}:")
+    for section, count in counts.items():
+        print(f"  {section}: {count}")
+    await db.close()
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="locus", description="Locus extraction framework")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -134,6 +158,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_run.add_argument("--dry-run", action="store_true", help="offline mode (no network)")
     p_run.add_argument("--max", type=int, default=None, help="max probe iterations")
     sub.add_parser("review", help="review classified probes")
+    p_import = sub.add_parser("import", help="import SSOT seed into the database")
+    p_import.add_argument("--seed", default="src/locus/data/locus_seed.json", help="seed JSON path")
 
     args = parser.parse_args(argv)
     config = LocusConfig()
@@ -145,6 +171,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return await _cmd_run(config, args.dry_run, args.max)
         if args.command == "review":
             return await _cmd_review(config)
+        if args.command == "import":
+            return await _cmd_import(config, args.seed)
         return 1
 
     return asyncio.run(_dispatch())

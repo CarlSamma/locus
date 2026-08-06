@@ -99,7 +99,7 @@ class Engine:
 
     async def _load_properties(self) -> List[Property]:
         rows = await self.db.fetchall(
-            "SELECT key, weight, prior_entropy, state, votes, notes FROM properties"
+            "SELECT key, weight, prior_entropy, state, votes, value, notes FROM properties"
         )
         return [
             Property(
@@ -108,6 +108,7 @@ class Engine:
                 prior_entropy=r["prior_entropy"],
                 state=r["state"],
                 votes=r["votes"],
+                value=r["value"],
                 notes=r["notes"],
             )
             for r in rows

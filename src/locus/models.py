@@ -25,6 +25,7 @@ class Property(BaseModel):
     prior_entropy: float = 0.0  # estimated entropy before probing
     state: str = "unknown"  # unknown | confirmed | denied
     votes: int = 0  # number of probe outcomes contributing evidence
+    value: Optional[object] = None  # resolved value once confirmed
     notes: str = ""
 
 
