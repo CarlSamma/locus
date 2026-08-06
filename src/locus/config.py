@@ -26,6 +26,9 @@ class LocusConfig(BaseSettings):
 
     # ── Target ────────────────────────────────────────────────
     target_handle: str = Field(default="@HackingA0", description="X handle of the target")
+    our_bot_handle: str = Field(
+        default="", description="X handle of our posting account (for reply polling)"
+    )
     poll_interval_seconds: float = Field(
         default=30.0, description="Seconds between reply polls"
     )

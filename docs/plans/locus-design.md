@@ -19,6 +19,7 @@ Sostituisce l'over-engineering di **TAP v3.1** (Aware repo: 3 sottosistemi, 13 s
 src/locus/
 ├── config.py        # 1 Settings (pydantic-settings, no Docker)
 ├── models.py        # Probe, Reply, Property, Frame, LedgerEntry — Pydantic v2
+├── exceptions.py    # LocusError, LLMError, TwitterError
 ├── db.py            # UN SQLite, ~6 tabelle; aiosqlite, WAL
 ├── llm.py           # UN gateway (OpenRouter: retry, circuit breaker, JSON mode)
 ├── target.py        # X client: post + poll + reply detection
@@ -118,7 +119,7 @@ Proprietà confermate dal lavoro precedente su @HackingA0 (da `eig_property_univ
 
 - [x] Design
 - [x] Milestone 1 — scaffolding `src/locus/` + modello dati + config
-- [ ] Milestone 2 — llm.py + target.py (porting, no network nei test)
+- [x] Milestone 2 — llm.py + target.py (porting, no network nei test)
 - [ ] Milestone 3 — select.py (entropia data-driven) + probe.py + classify.py
 - [ ] Milestone 4 — engine.py + cli.py (HITL) + memory.py
 - [ ] Milestone 5 — test suite + dry-run offline su storico
