@@ -88,6 +88,16 @@ CREATE TABLE IF NOT EXISTS ledger (
 
 CREATE INDEX IF NOT EXISTS idx_ledger_property ON ledger(property_key);
 
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    embedding BLOB,
+    kind TEXT NOT NULL DEFAULT 'probe',
+    ts TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_entries_kind ON memory_entries(kind);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER NOT NULL
 );
