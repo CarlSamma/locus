@@ -10,6 +10,10 @@ pydantic>=2.0.0
 pydantic-settings>=2.0.0
 httpx>=0.24.0
 
+# web (FastAPI dashboard backend)
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
 # x (posting to X via tweepy)
 tweepy>=4.14.0
 

@@ -3,12 +3,15 @@
 Minimal single-target extraction framework for interacting with LLM bots
 (target: `@HackingA0`) via probing conversazionale guidato dall'entropia.
 
+Backend FastAPI + dashboard web (React) oltre a CLI e GUI desktop Tkinter.
+
 Design: [`docs/plans/locus-design.md`](docs/plans/locus-design.md)
 
 ## Requisiti
 
 - Windows 10/11
 - Python **3.10+** (testato con 3.13) presente nel `PATH`
+- Node.js **18+** e npm (solo per build/sviluppo della webapp)
 - `git` (opzionale, per l'installazione)
 
 ## Installazione (Windows)
@@ -26,7 +29,12 @@ pip install -r requirements.txt
 # 3) installare il pacchetto in modalità sviluppo
 pip install -e .
 
-# 4) creare il file .env con le credenziali (X + OpenRouter)
+# 4) (solo per la webapp) installare le dipendenze frontend
+cd web
+npm install
+cd ..
+
+# 5) creare il file .env con le credenziali (X + OpenRouter)
 #    copiare .env.example in .env e inserire le chiavi
 ```
 
@@ -71,7 +79,51 @@ La finestra permette di:
 - **Post to X** → pubblica il tweet con menzione a `@HackingA0`
 - **Poll replies** → legge le risposte del target
 
-### 2. Linea di comando
+### 2. Web app (FastAPI + React)
+
+Il backend FastAPI (`src/locus/api.py`) espone le stesse funzionalità via REST
+e serve la dashboard React compilata in `web/dist`.
+
+```powershell
+# 1) (una tantum) compilare il frontend → web/dist
+cd web
+npm install
+npm run build
+cd ..
+
+# 2) avviare il server (API + SPA sulla stessa porta)
+python -m uvicorn locus.api:app --host 127.0.0.1 --port 8000
+```
+
+Aprire `http://127.0.0.1:8000`. Documentazione interattiva delle API:
+`http://127.0.0.1:8000/api/docs`.
+
+Viste della dashboard:
+
+- **Status** — KPI entropia, progresso Fase 5, tabella stato proprietà
+- **Proprietà** — universe delle proprietà con barre di entropia
+- **Probe Lab** — genera/posta/interroga sonde + sessioni (dry-run offline)
+- **Attack Tree** — la tabella `probes` (l'albero di attacco) espandibile
+- **Review** — top sonde per score, approvazione HITL
+- **Ledger & Intel** — esiti immutabili e leak raccolti
+- **Sessions** — storico sessioni di campagna
+
+In sviluppo (hot reload frontend + proxy verso FastAPI):
+
+```powershell
+python -m uvicorn locus.api:app --host 127.0.0.1 --port 8000
+# in un altro terminale:
+cd web
+npm run dev        # http://localhost:5173 (proxy /api → :8000)
+```
+
+Endpoint principali: `GET /api/status`, `GET /api/properties`, `GET
+/api/frames`, `GET /api/probes`, `GET /api/review`, `GET /api/ledger`, `GET
+/api/intel`, `GET /api/sessions`, `POST /api/run` (sessione in background, con
+`--dry-run` equivalente via `dry_run: true`), `POST /api/probes/generate`,
+`POST /api/probes/post`, `POST /api/probes/poll`.
+
+### 3. Linea di comando
 
 ```powershell
 # Riepilogo proprietà / entropia / sessioni (carica il SSOT)
@@ -90,7 +142,7 @@ locus run --max 5
 locus review
 ```
 
-### 3. Test
+### 4. Test
 
 ```powershell
 python -m pytest tests\ -v -p no:postgresql
@@ -115,7 +167,16 @@ src/locus/
   trust.py      # confini di fiducia: sanifica contenuto non fidato (reply)
   gui.py        # desktop GUI (generate + post to X)
   cli.py        # HITL entrypoint
+  api.py        # backend FastAPI: endpoint REST + mount SPA (web/dist)
   data/         # locus_seed.json — SSOT of all past probes of @HackingA0
+
+web/                  # frontend React + Vite (compilato in web/dist)
+  src/
+    api.ts            # client tipizzato per /api/*
+    App.tsx           # router (7 view) + layout shell
+    components/       # Layout (sidebar/header/footer), ui (KPI, barre, chip)
+    pages/            # Status, Properties, ProbeLab, AttackTree, Review, Ledger, Sessions
+  dist/               # output di build, servito da FastAPI (gitignored)
 ```
 
 ## Status
@@ -127,3 +188,4 @@ src/locus/
 - [x] Milestone 4 — engine + cli + memory
 - [x] Milestone 5 — test suite + SSOT dry-run
 - [x] GUI — generazione probe + posting su X
+- [x] Web — backend FastAPI + dashboard React (7 view, dry-run da browser)
