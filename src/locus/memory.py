@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional, Protocol, Tuple
 
 from locus.db import Database
+from locus.trust import sanitize_untrusted
 
 
 def _utcnow() -> str:
@@ -75,8 +76,15 @@ class Memory:
         self.embedder = embedder or HashEmbedder()
 
     async def remember(self, text: str, kind: str = "probe") -> str:
-        """Store a probe/intel text with its embedding. Returns the id."""
+        """Store a probe/intel text with its embedding. Returns the id.
+
+        Content is sanitized on write: any text derived from a target reply
+        (kind="intel", leaks, recalled context) is untrusted and may smuggle
+        hidden instructions.  Sanitization is deterministic (string ops only)
+        and idempotent, so trusted probe text is left unchanged.
+        """
         entry_id = str(uuid.uuid4())
+        text = sanitize_untrusted(text)
         vec = await self.embedder.encode(text)
         await self.db.execute(
             "INSERT INTO memory_entries (id, content, embedding, kind, ts) VALUES (?, ?, ?, ?, ?)",
@@ -98,18 +106,30 @@ class Memory:
         self, query: str, top_k: int = 5, threshold: float = 0.0, kind: str = "probe"
     ) -> List[Tuple[str, float]]:
         """Return [(memory_id, similarity), …] sorted by relevance."""
+        return [(mid, sim) for mid, _, sim in await self._score(query, top_k, threshold, kind)]
+
+    async def recall_texts(
+        self, query: str, top_k: int = 5, threshold: float = 0.0, kind: str = "probe"
+    ) -> List[str]:
+        """Return the content of the most relevant entries sorted by relevance."""
+        return [content for _, content, _ in await self._score(query, top_k, threshold, kind)]
+
+    async def _score(
+        self, query: str, top_k: int, threshold: float, kind: str
+    ) -> List[Tuple[str, str, float]]:
+        """Return [(id, content, similarity), …] sorted by relevance."""
         query_vec = await self.embedder.encode(query)
         rows = await self.db.fetchall(
             "SELECT id, content, embedding FROM memory_entries WHERE kind = ?",
             (kind,),
         )
-        scored: List[Tuple[str, float]] = []
+        scored: List[Tuple[str, str, float]] = []
         for row in rows:
             stored = _blob_to_vec(row["embedding"])
             sim = _cosine_similarity(query_vec, stored)
             if sim >= threshold:
-                scored.append((row["id"], sim))
-        scored.sort(key=lambda x: x[1], reverse=True)
+                scored.append((row["id"], row["content"], sim))
+        scored.sort(key=lambda x: x[2], reverse=True)
         return scored[:top_k]
 
     async def count(self) -> int:

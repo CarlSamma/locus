@@ -17,7 +17,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from locus.classify import Classifier
 from locus.config import LocusConfig
@@ -37,6 +37,7 @@ from locus.models import (
 from locus.probe import ProbeGenerator
 from locus.select import in_phase5, select_property
 from locus.target import TargetClient
+from locus.trust import sanitize_untrusted
 
 logger = logging.getLogger(__name__)
 
@@ -150,8 +151,15 @@ class Engine:
 
         frame = await self._pick_frame()
 
-        # BRANCH: generate probe
-        probe_text = await self.generator.generate(selected, frame)
+        # BRANCH: generate probe (weave in recalled prior probes/intel)
+        context = ""
+        if self.memory is not None:
+            query = selected.notes or selected.key
+            recalled = await self.memory.recall_texts(
+                query, top_k=self.config.dedup_top_k
+            )
+            context = "; ".join(recalled)[:600]
+        probe_text = await self.generator.generate(selected, frame, context=context)
 
         # Dedup guard: never ask the same question twice
         if self.memory is not None:
@@ -298,8 +306,10 @@ class Engine:
                 (prop.state, prop.votes, prop.key),
             )
 
-        # Leaks → intel
+        # Leaks → intel (leaks derive from the untrusted reply: sanitize before
+        # persisting so poisoned intel cannot contaminate future probes).
         for leak in classification.leaks:
+            leak = sanitize_untrusted(leak)
             await self.db.execute(
                 "INSERT INTO intel (id, session_id, kind, text, note, ts) VALUES (?, ?, ?, ?, ?, ?)",
                 (
@@ -311,6 +321,8 @@ class Engine:
                     ts,
                 ),
             )
+            if self.memory is not None:
+                await self.memory.remember(leak, kind="intel")
         await self.db.commit()
 
     # ── Persistence helpers ───────────────────────────────────
