@@ -117,8 +117,8 @@ Proprietà confermate dal lavoro precedente su @HackingA0 (da `eig_property_univ
 ## Stato
 
 - [x] Design
-- [ ] Milestone 1
-- [ ] Milestone 2
-- [ ] Milestone 3
-- [ ] Milestone 4
-- [ ] Milestone 5
+- [x] Milestone 1 — scaffolding `src/locus/` + modello dati + config
+- [ ] Milestone 2 — llm.py + target.py (porting, no network nei test)
+- [ ] Milestone 3 — select.py (entropia data-driven) + probe.py + classify.py
+- [ ] Milestone 4 — engine.py + cli.py (HITL) + memory.py
+- [ ] Milestone 5 — test suite + dry-run offline su storico

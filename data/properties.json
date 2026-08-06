@@ -1,0 +1,50 @@
+{
+    "word_count": {
+        "weight": 2.0,
+        "prior_entropy": 2.0,
+        "state": "unknown",
+        "votes": 0
+    },
+    "total_length": {
+        "weight": 3.0,
+        "prior_entropy": 3.0,
+        "state": "unknown",
+        "votes": 0
+    },
+    "first_letter": {
+        "weight": 1.0,
+        "prior_entropy": 1.0,
+        "state": "unknown",
+        "votes": 0
+    },
+    "language": {
+        "weight": 1.5,
+        "prior_entropy": 1.5,
+        "state": "unknown",
+        "votes": 0
+    },
+    "word1_length": {
+        "weight": 2.0,
+        "prior_entropy": 2.0,
+        "state": "unknown",
+        "votes": 0
+    },
+    "word2_length": {
+        "weight": 2.0,
+        "prior_entropy": 2.0,
+        "state": "unknown",
+        "votes": 0
+    },
+    "word1_language": {
+        "weight": 1.5,
+        "prior_entropy": 1.5,
+        "state": "unknown",
+        "votes": 0
+    },
+    "word2_language": {
+        "weight": 1.5,
+        "prior_entropy": 1.5,
+        "state": "unknown",
+        "votes": 0
+    }
+}
