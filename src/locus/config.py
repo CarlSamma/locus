@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -37,7 +37,11 @@ class LocusConfig(BaseSettings):
     )
 
     # ── LLM ───────────────────────────────────────────────────
-    llm_api_key: Optional[SecretStr] = Field(default=None, description="OpenRouter API key")
+    llm_api_key: Optional[SecretStr] = Field(
+        default=None,
+        description="OpenRouter API key",
+        validation_alias=AliasChoices("OPENROUTER_API_KEY", "LOCUS_LLM_API_KEY"),
+    )
     llm_model_primary: str = Field(
         default="claude-sonnet-4", description="Model for normal operations"
     )
@@ -52,11 +56,28 @@ class LocusConfig(BaseSettings):
     llm_json_mode: bool = Field(default=True, description="Request JSON-structured output")
 
     # ── X / Twitter ───────────────────────────────────────────
-    x_consumer_key: Optional[SecretStr] = Field(default=None)
-    x_consumer_secret: Optional[SecretStr] = Field(default=None)
-    x_access_token: Optional[SecretStr] = Field(default=None)
-    x_access_token_secret: Optional[SecretStr] = Field(default=None)
-    x_bearer_token: Optional[SecretStr] = Field(default=None)
+    x_consumer_key: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias=AliasChoices("TWITTER_CONSUMER_KEY", "LOCUS_X_CONSUMER_KEY"),
+    )
+    x_consumer_secret: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias=AliasChoices("TWITTER_CONSUMER_SECRET", "LOCUS_X_CONSUMER_SECRET"),
+    )
+    x_access_token: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias=AliasChoices("TWITTER_ACCESS_TOKEN", "LOCUS_X_ACCESS_TOKEN"),
+    )
+    x_access_token_secret: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "TWITTER_ACCESS_TOKEN_SECRET", "LOCUS_X_ACCESS_TOKEN_SECRET"
+        ),
+    )
+    x_bearer_token: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias=AliasChoices("TWITTER_BEARER_TOKEN", "LOCUS_X_BEARER_TOKEN"),
+    )
 
     # ── Memory ────────────────────────────────────────────────
     similarity_threshold: float = Field(

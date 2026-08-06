@@ -30,6 +30,7 @@ dev = [
 
 [project.scripts]
 locus = "locus.cli:main"
+locus-gui = "locus.gui:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

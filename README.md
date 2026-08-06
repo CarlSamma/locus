@@ -14,6 +14,7 @@ python -m pytest tests/ -v -p no:postgresql
 locus status                 # entropy/state summary (loads SSOT seed)
 locus import --seed src/locus/data/locus_seed.json
 locus run --dry-run          # offline session replay
+locus-gui                    # desktop GUI: generate probes + post to X
 ```
 
 ## Layout
@@ -32,9 +33,16 @@ src/locus/
   engine.py     # async state-machine cycle
   memory.py     # dedup + recall (hash embedder, offline)
   seed.py       # SSOT importer (locus_seed.json)
+  gui.py        # desktop GUI (generate + post to X)
   cli.py        # HITL entrypoint
   data/         # locus_seed.json — SSOT of all past probes of @HackingA0
 ```
+
+## Credentials
+
+X/OpenRouter keys live in `.env` (gitignored). The config maps the legacy
+`TWITTER_*` / `OPENROUTER_API_KEY` names to the `LOCUS_*` fields via
+`AliasChoices`, so no renaming is needed.
 
 ## Status
 
