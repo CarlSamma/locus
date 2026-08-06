@@ -1,0 +1,21 @@
+# Locus — dependencies (generated from pyproject.toml + GUI/X/LLM extras)
+# Requires: Python 3.10+
+#
+# Install:  pip install -r requirements.txt
+# Dev:      pip install -e .[dev]
+
+# core
+aiosqlite>=0.19.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+httpx>=0.24.0
+
+# x (posting to X via tweepy)
+tweepy>=4.14.0
+
+# llm (OpenRouter gateway via openai SDK)
+openai>=1.0.0
+
+# dev / test
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
