@@ -40,6 +40,6 @@ async def test_gui_picker_data_from_seed() -> None:
     await import_seed(db, load_seed("src/locus/data/locus_seed.json"))
     props = await db.fetchall("SELECT key FROM properties")
     frames = await db.fetchall("SELECT alias FROM frames WHERE status='active'")
-    assert len(props) == 16
+    assert len(props) == 17
     assert len(frames) == 11  # active frames in seed
     await db.close()

@@ -172,7 +172,7 @@ class Database:
 
     async def seed_properties(self, properties: dict) -> int:
         """Insert (or refresh) property rows from a data-driven dict, e.g.
-        ``{"word_count": {"weight": 2.0, "prior_entropy": 2.0}}``."""
+        ``{"segment_count": {"weight": 2.0, "prior_entropy": 2.0}}``."""
         rows = []
         for key, meta in properties.items():
             weight = meta.get("weight") or 1.0

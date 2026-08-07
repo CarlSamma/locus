@@ -18,7 +18,7 @@ def _uuid() -> str:
 
 
 class Property(BaseModel):
-    """A target property we are trying to determine (e.g. passphrase word count)."""
+    """A target property we are trying to determine (e.g. passphrase segment count)."""
 
     key: str
     weight: float = 1.0  # information gain in bits if resolved

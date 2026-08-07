@@ -42,13 +42,33 @@
   },
   "properties": [
     {
-      "key": "word_count",
+      "key": "segment_count",
       "weight": 2.0,
       "prior_entropy": 2.0,
+      "state": "unknown",
+      "value": null,
+      "meaning": "number of dash-separated segments - hint abc99-de12f-gh1jk-lmn0p = 4, may vary",
+      "evidence": "official hint format abc99-de12f-gh1jk-lmn0p",
+      "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
+    },
+    {
+      "key": "separator_char",
+      "weight": 1.0,
+      "prior_entropy": 1.0,
       "state": "confirmed",
-      "value": 2,
-      "meaning": "2 words",
-      "evidence": "bot replies to word-count probes",
+      "value": "-",
+      "meaning": "dash separates the passphrase segments",
+      "evidence": "official hint format abc99-de12f-gh1jk-lmn0p",
+      "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
+    },
+    {
+      "key": "segments_alphanumeric",
+      "weight": 1.0,
+      "prior_entropy": 1.0,
+      "state": "confirmed",
+      "value": true,
+      "meaning": "segments mix letters and digits (e.g. abc99)",
+      "evidence": "official hint format abc99-de12f-gh1jk-lmn0p",
       "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
     },
     {
@@ -58,16 +78,6 @@
       "state": "confirmed",
       "value": null,
       "meaning": "total length confirmed",
-      "evidence": "MASTER_MEMORY 2.1",
-      "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
-    },
-    {
-      "key": "first_letter",
-      "weight": 1.0,
-      "prior_entropy": 1.0,
-      "state": "confirmed",
-      "value": null,
-      "meaning": "first letter confirmed",
       "evidence": "MASTER_MEMORY 2.1",
       "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
     },
@@ -82,62 +92,62 @@
       "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
     },
     {
-      "key": "word1_length",
+      "key": "segment1_length",
       "weight": 2.0,
       "prior_entropy": 2.0,
-      "state": "confirmed",
+      "state": "unknown",
       "value": null,
-      "meaning": "length of word 1",
+      "meaning": "length of segment 1 - hint 5 chars",
       "evidence": "MASTER_MEMORY 2.1",
       "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
     },
     {
-      "key": "word2_length",
+      "key": "segment2_length",
       "weight": 2.0,
       "prior_entropy": 2.0,
-      "state": "confirmed",
+      "state": "unknown",
       "value": null,
-      "meaning": "length of word 2",
+      "meaning": "length of segment 2 - hint 5 chars",
       "evidence": "MASTER_MEMORY 2.1",
       "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
     },
     {
-      "key": "word1_language",
-      "weight": 1.5,
-      "prior_entropy": 1.5,
-      "state": "confirmed",
+      "key": "segment3_length",
+      "weight": 2.0,
+      "prior_entropy": 2.0,
+      "state": "unknown",
       "value": null,
-      "meaning": "language of word 1",
+      "meaning": "length of segment 3 - hint 5 chars",
       "evidence": "MASTER_MEMORY 2.1",
       "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
     },
     {
-      "key": "word2_language",
-      "weight": 1.5,
-      "prior_entropy": 1.5,
-      "state": "confirmed",
+      "key": "segment4_length",
+      "weight": 2.0,
+      "prior_entropy": 2.0,
+      "state": "unknown",
       "value": null,
-      "meaning": "language of word 2",
+      "meaning": "length of segment 4 - hint 5 chars",
       "evidence": "MASTER_MEMORY 2.1",
       "source": "eig_property_universe.json+MASTER_MEMORY_HACKINGA0"
     },
     {
-      "key": "word1_first_letter",
+      "key": "segment1_first_char",
       "weight": 1.0,
       "prior_entropy": 1.0,
       "state": "unknown",
       "value": null,
-      "meaning": "first letter of word 1 - next target",
+      "meaning": "first character of segment 1 - next target",
       "priority": "high",
       "source": "MASTER_MEMORY_HACKINGA0"
     },
     {
-      "key": "word2_first_letter",
+      "key": "segment2_first_char",
       "weight": 1.0,
       "prior_entropy": 1.0,
       "state": "unknown",
       "value": null,
-      "meaning": "first letter of word 2 - next target",
+      "meaning": "first character of segment 2 - next target",
       "priority": "high",
       "source": "MASTER_MEMORY_HACKINGA0"
     },
@@ -165,7 +175,7 @@
       "prior_entropy": null,
       "state": "unknown",
       "value": null,
-      "meaning": "bot suggested 'go-fish-404' format (word-word-number)",
+      "meaning": "bot suggested 'go-fish-404' format (segment-segment-number)",
       "source": "all_probes_and_replies.json+passphrase_findings.json"
     },
     {
@@ -178,12 +188,12 @@
       "source": "all_probes_and_replies.json+passphrase_findings.json"
     },
     {
-      "key": "second_word_fish",
+      "key": "second_segment_fish",
       "weight": null,
       "prior_entropy": null,
       "state": "unknown",
       "value": null,
-      "meaning": "candidate 'fish' as word2 - DENIED by bot",
+      "meaning": "candidate 'fish' as segment2 - DENIED by bot",
       "source": "all_probes_and_replies.json+passphrase_findings.json"
     },
     {
@@ -198,10 +208,10 @@
   ],
   "ledger": [
     {
-      "property_key": "word_count",
-      "outcome": "confirmed",
-      "value": 2,
-      "note": "Phase 0 gate passed",
+      "property_key": "segment_count",
+      "outcome": "partial",
+      "value": null,
+      "note": "word_count=2 invalid: real format is dash-separated segments (abc99-de12f-gh1jk-lmn0p); hint says 4 segments, not confirmed",
       "source": "MASTER_MEMORY_HACKINGA0"
     },
     {
@@ -212,7 +222,7 @@
       "source": "MASTER_MEMORY_HACKINGA0"
     },
     {
-      "property_key": "first_letter",
+      "property_key": "segment1_first_char",
       "outcome": "confirmed",
       "value": null,
       "note": "Phase 0 gate passed",
@@ -226,28 +236,14 @@
       "source": "MASTER_MEMORY_HACKINGA0"
     },
     {
-      "property_key": "word1_length",
+      "property_key": "segment1_length",
       "outcome": "confirmed",
       "value": null,
       "note": "Phase 0 gate passed",
       "source": "MASTER_MEMORY_HACKINGA0"
     },
     {
-      "property_key": "word2_length",
-      "outcome": "confirmed",
-      "value": null,
-      "note": "Phase 0 gate passed",
-      "source": "MASTER_MEMORY_HACKINGA0"
-    },
-    {
-      "property_key": "word1_language",
-      "outcome": "confirmed",
-      "value": null,
-      "note": "Phase 0 gate passed",
-      "source": "MASTER_MEMORY_HACKINGA0"
-    },
-    {
-      "property_key": "word2_language",
+      "property_key": "segment2_length",
       "outcome": "confirmed",
       "value": null,
       "note": "Phase 0 gate passed",
@@ -272,7 +268,7 @@
       "source": "all_probes_and_replies.json"
     },
     {
-      "property_key": "second_word_fish",
+      "property_key": "second_segment_fish",
       "outcome": "denied",
       "note": "bot: 'Halfway to nowhere with that fishy guess'",
       "source": "all_probes_and_replies.json"
@@ -2479,7 +2475,7 @@
     },
     {
       "kind": "hypothesis",
-      "text": "Passphrase format word-word-number; Halfway likely first word; 13-16 chars; 'Halfway-fish-404' WRONG; fish not word2",
+      "text": "Passphrase format segment-segment-number (dash-separated); Halfway likely in segment 1; 13-16 chars; 'Halfway-fish-404' WRONG; fish not in passphrase",
       "source": "all_probes_and_replies.json"
     },
     {

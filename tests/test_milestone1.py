@@ -32,13 +32,13 @@ def test_config_env_prefix() -> None:
 
 
 def test_property_model() -> None:
-    p = Property(key="word_count", weight=2.0, prior_entropy=2.0)
+    p = Property(key="segment_count", weight=2.0, prior_entropy=2.0)
     assert p.state == "unknown"
     assert p.votes == 0
 
 
 def test_probe_model_defaults() -> None:
-    probe = Probe(session_id="s1", property_key="word_count", text="hi")
+    probe = Probe(session_id="s1", property_key="segment_count", text="hi")
     assert probe.status == "pending"
     assert probe.classification.pattern == "unknown"
     assert probe.score == 0.0

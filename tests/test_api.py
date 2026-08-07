@@ -122,7 +122,7 @@ async def db(config: LocusConfig) -> Database:
     await d.initialize(":memory:")
     await d.seed_properties(
         {
-            "word_count": {"weight": 2.0, "prior_entropy": 2.0},
+            "segment_count": {"weight": 2.0, "prior_entropy": 2.0},
             "total_length": {"weight": 3.0, "prior_entropy": 3.0},
         }
     )
@@ -202,7 +202,7 @@ def test_probes_generate_missing_property(client: TestClient) -> None:
 def test_probes_post_persists(client: TestClient) -> None:
     resp = client.post(
         "/api/probes/post",
-        json={"text": "hello @Test", "property_key": "word_count"},
+        json={"text": "hello @Test", "property_key": "segment_count"},
     )
     assert resp.status_code == 200
     data = resp.json()

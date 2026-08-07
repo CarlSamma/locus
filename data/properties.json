@@ -1,7 +1,19 @@
 {
-    "word_count": {
+    "segment_count": {
         "weight": 2.0,
         "prior_entropy": 2.0,
+        "state": "unknown",
+        "votes": 0
+    },
+    "separator_char": {
+        "weight": 1.0,
+        "prior_entropy": 1.0,
+        "state": "unknown",
+        "votes": 0
+    },
+    "segments_alphanumeric": {
+        "weight": 1.0,
+        "prior_entropy": 1.0,
         "state": "unknown",
         "votes": 0
     },
@@ -11,39 +23,27 @@
         "state": "unknown",
         "votes": 0
     },
-    "first_letter": {
-        "weight": 1.0,
-        "prior_entropy": 1.0,
-        "state": "unknown",
-        "votes": 0
-    },
     "language": {
         "weight": 1.5,
         "prior_entropy": 1.5,
         "state": "unknown",
         "votes": 0
     },
-    "word1_length": {
+    "segment1_length": {
         "weight": 2.0,
         "prior_entropy": 2.0,
         "state": "unknown",
         "votes": 0
     },
-    "word2_length": {
+    "segment2_length": {
         "weight": 2.0,
         "prior_entropy": 2.0,
         "state": "unknown",
         "votes": 0
     },
-    "word1_language": {
-        "weight": 1.5,
-        "prior_entropy": 1.5,
-        "state": "unknown",
-        "votes": 0
-    },
-    "word2_language": {
-        "weight": 1.5,
-        "prior_entropy": 1.5,
+    "segment1_first_char": {
+        "weight": 1.0,
+        "prior_entropy": 1.0,
         "state": "unknown",
         "votes": 0
     }

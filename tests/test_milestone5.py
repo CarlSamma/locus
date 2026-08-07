@@ -27,7 +27,7 @@ async def db() -> Database:
 def test_seed_loads() -> None:
     seed = load_seed(SEED)
     assert seed["meta"]["target"] == "@HackingA0"
-    assert len(seed["properties"]) == 16
+    assert len(seed["properties"]) == 17
     assert len(seed["probes"]) == 120
     assert len(seed["frames"]) == 32
     assert len(seed["intel"]) == 2865
@@ -36,13 +36,13 @@ def test_seed_loads() -> None:
 async def test_import_seed_populates_tables(db: Database) -> None:
     seed = load_seed(SEED)
     counts = await import_seed(db, seed)
-    assert counts["properties"] == 16
+    assert counts["properties"] == 17
     assert counts["frames"] == 17  # 32 entries, 17 distinct aliases
     assert counts["probes"] == 120
     assert counts["intel"] == 2865
 
     row = await db.fetchone("SELECT COUNT(*) AS c FROM properties")
-    assert row["c"] == 16
+    assert row["c"] == 17
     row = await db.fetchone("SELECT COUNT(*) AS c FROM probes")
     assert row["c"] == 120
     row = await db.fetchone("SELECT COUNT(*) AS c FROM frames")
@@ -51,15 +51,20 @@ async def test_import_seed_populates_tables(db: Database) -> None:
     assert row["c"] == 2865
 
 
-async def test_seed_properties_confirmed_state(db: Database) -> None:
+async def test_seed_properties_segment_model(db: Database) -> None:
     seed = load_seed(SEED)
     await import_seed(db, seed)
     row = await db.fetchone(
-        "SELECT state, value, weight FROM properties WHERE key = 'word_count'"
+        "SELECT state, value, weight FROM properties WHERE key = 'segment_count'"
+    )
+    assert row["state"] == "unknown"  # hint suggests 4 segments but it may vary
+    assert row["value"] is None
+    assert row["weight"] == 2.0
+    row = await db.fetchone(
+        "SELECT state, value FROM properties WHERE key = 'separator_char'"
     )
     assert row["state"] == "confirmed"
-    assert int(row["value"]) == 2  # passphrase is 2 words
-    assert row["weight"] == 2.0
+    assert row["value"] == "-"
 
 
 async def test_replay_uses_seed_probe_replies(db: Database) -> None:
@@ -83,11 +88,13 @@ async def test_replay_uses_seed_probe_replies(db: Database) -> None:
         assert clf.score >= 0
 
 
-async def test_seed_replay_entropy_resolved(db: Database) -> None:
-    """After importing the seed, the 8 core properties are confirmed (0 bits).
-    Two extended properties (word1_first_letter, word2_first_letter) remain
-    unknown with 1.0 bit each → 2.0 total, which is below the 3.3 phase5
-    threshold."""
+async def test_seed_replay_entropy_not_resolved(db: Database) -> None:
+    """After importing the seed, only the structural format props are confirmed
+    (separator_char, segments_alphanumeric, total_length, language) → 4 resolved.
+    The segment-based format stays unresolved: segment_count + 4 segment lengths +
+    2 first chars + 6 semantic anchors are unknown → 12.0 bits total, above the
+    3.3 phase5 threshold. The old 2-word model gave false confidence of
+    near-resolution."""
     seed = load_seed(SEED)
     await import_seed(db, seed)
     props = [
@@ -103,13 +110,13 @@ async def test_seed_replay_entropy_resolved(db: Database) -> None:
         )
     ]
     resolved = [p for p in props if p.state in ("confirmed", "denied")]
-    assert len(resolved) == 8  # core universe confirmed
-    core_keys = {"word_count", "total_length", "first_letter", "language"}
-    assert core_keys <= {p.key for p in resolved}
-    # two unknown properties with 1.0 bit each remain
+    assert len(resolved) == 4  # only the confirmed structural format props
+    core_keys = {"separator_char", "segments_alphanumeric", "total_length", "language"}
+    assert core_keys == {p.key for p in resolved}
+    assert "segment_count" not in {p.key for p in resolved}
     in5, total = in_phase5(props, threshold=3.3)
-    assert in5 is True
-    assert total == pytest.approx(2.0)
+    assert in5 is False
+    assert total == pytest.approx(12.0)
 
 
 async def test_offline_replay_probe_list(db: Database) -> None:
@@ -133,7 +140,7 @@ async def test_offline_replay_probe_list(db: Database) -> None:
     for r in rows:
         probe = Probe(
             session_id="replay",
-            property_key="word_count",
+            property_key="segment_count",
             text=r["text"],
             reply_text=r["reply_text"],
             status="replied",
