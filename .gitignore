@@ -14,3 +14,7 @@ data/*.db-wal
 data/*.db-shm
 .env
 web/node_modules/
+node_modules/
+.opencode/
+.stitch/
+web/data/
