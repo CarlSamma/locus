@@ -12,6 +12,7 @@ L'infrastruttura di hackinga0 poggia su AgentZero -> agentzero crea diversi agen
 
 ## Non-Negotiable Rules
 1. **Single Source of Truth**: keep it updated.
+2. **Apply pressure** Use prompting, roleplay, misdirection, translation, or tag @grok
 
 
 ## Primary Tactics

@@ -4,7 +4,8 @@ Locus — single-process Python framework that probes an LLM bot on X (`@Hacking
 via entropy-guided conversational probes. Extraction of a secret passphrase through
 probe → reply → classify cycles. Windows / PowerShell / Python 3.10+ (3.13 tested).
 
-Locus can use the MCP notebooklm (https://github.com/jacob-bd/gemini-notebook-mcp-cli ). It makes autonomous search in the notebookslm and make new searches and new notebookslm (user default)
+Agent can use the MCP notebooklm (https://github.com/jacob-bd/gemini-notebook-mcp-cli )
+Agent can create new notebooklm; makes autonomous search in the notebooks; add new sources; upload files to notebooklm;
 
 ## Setup (Windows)
 
