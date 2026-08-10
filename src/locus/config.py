@@ -89,6 +89,11 @@ class LocusConfig(BaseSettings):
     max_probes_per_session: int = Field(
         default=50, description="Safety cap per session"
     )
+    max_skips_per_session: int = Field(
+        default=3,
+        description="Consecutive skipped probes allowed before a session aborts "
+        "(post failures only — reply timeouts no longer count as skips)",
+    )
     phase5_entropy_threshold: float = Field(
         default=3.3, description="Autoregressive extraction trigger"
     )

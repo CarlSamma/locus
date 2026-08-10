@@ -8,11 +8,11 @@ Locus resume from ground truth and provides the offline replay corpus.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from locus.db import Database
 from locus.models import Classification
@@ -22,19 +22,68 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def seed_fingerprint(seed: Dict[str, Any]) -> str:
+    """Deterministic fingerprint of the SSOT seed content.
+
+    Built only from stable identifiers (property keys, frame aliases, probe
+    ids, section counts), so two identical seeds share the same fingerprint.
+    Used to make ``import_seed`` idempotent: re-importing the same seed is a
+    no-op instead of re-inserting thousands of duplicate intel rows.
+    """
+    h = hashlib.sha1()
+    chunks: List[List[str]] = [
+        sorted(str(p.get("key", "")) for p in seed.get("properties") or []),
+        sorted(str(f.get("alias", "")) for f in seed.get("frames") or []),
+        sorted(str(p.get("probe_id", "")) for p in seed.get("probes") or []),
+        [str(len(seed.get("intel") or [])), str(len(seed.get("ledger") or []))],
+    ]
+    for chunk in chunks:
+        for item in chunk:
+            h.update(item.encode("utf-8", "replace"))
+            h.update(b"\x00")
+    return h.hexdigest()
+
+
+def _deterministic_id(*parts: str) -> str:
+    """Stable id from content parts: same seed rows always map to same id.
+
+    This is what makes ledger (and any content-addressed section) idempotent
+    even without the fingerprint guard — re-import replaces, never duplicates.
+    """
+    digest = hashlib.sha1("|".join(parts).encode("utf-8", "replace")).hexdigest()
+    return f"seed:{digest}"
+
+
 def load_seed(path: str) -> Dict[str, Any]:
     """Load and return the raw SSOT JSON structure."""
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-async def import_seed(db: Database, seed: Dict[str, Any]) -> Dict[str, int]:
+async def import_seed(
+    db: Database, seed: Dict[str, Any], *, force: bool = False
+) -> Dict[str, int]:
     """Import every section of the seed into the database.
 
+    Idempotent by design: the same seed imported twice produces no new rows.
+    A content fingerprint is stored in ``seed_meta``; when it matches the
+    incoming seed (and ``force`` is False) the whole import is skipped, so the
+    per-command CLI auto-import (``locus status``, ``locus run``, …) stops
+    bloating the DB with duplicate intel rows.  The ledger section uses
+    content-addressed ids as a second layer of protection.
+
     Returns:
-        A dict of {section: count} for sections actually imported.
+        A dict of {section: count} for sections actually imported, or an empty
+        dict when the seed was already imported (fingerprint match).
     """
     counts: Dict[str, int] = {}
+
+    fp = seed_fingerprint(seed)
+    row = await db.fetchone(
+        "SELECT value FROM seed_meta WHERE key = 'seed_fingerprint'"
+    )
+    if not force and row is not None and row["value"] == fp:
+        return counts  # already imported — no-op
 
     properties = seed.get("properties") or []
     if properties:
@@ -118,14 +167,19 @@ async def import_seed(db: Database, seed: Dict[str, Any]) -> Dict[str, int]:
             "VALUES (?, ?, ?, ?, ?, ?)",
             [
                 (
-                    str(uuid.uuid4()),
-                    l.get("property_key", ""),
-                    l.get("outcome") or "partial",
-                    str(l.get("probe_id") or uuid.uuid4()),
+                    _deterministic_id(
+                        "ledger",
+                        str(le.get("property_key", "")),
+                        str(le.get("probe_id", "")),
+                        str(le.get("outcome") or "partial"),
+                    ),
+                    le.get("property_key", ""),
+                    le.get("outcome") or "partial",
+                    str(le.get("probe_id") or ""),
                     _utcnow_iso(),
-                    str(l.get("note") or l.get("value") or ""),
+                    str(le.get("note") or le.get("value") or ""),
                 )
-                for l in ledger
+                for le in ledger
             ],
         )
         counts["ledger"] = len(ledger)
@@ -167,5 +221,9 @@ async def import_seed(db: Database, seed: Dict[str, Any]) -> Dict[str, int]:
         )
         counts["sessions"] = len(sessions)
 
+    await db.executemany(
+        "INSERT OR REPLACE INTO seed_meta (key, value) VALUES (?, ?)",
+        [("seed_fingerprint", fp)],
+    )
     await db.commit()
     return counts

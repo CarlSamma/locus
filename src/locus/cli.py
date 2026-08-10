@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os as _os
 import sys
 from typing import List, Optional
@@ -96,10 +95,16 @@ async def _cmd_status(config: LocusConfig) -> int:
     return 0
 
 
-async def _cmd_run(config: LocusConfig, dry_run: bool, max_probes: Optional[int]) -> int:
+async def _cmd_run(
+    config: LocusConfig,
+    dry_run: bool,
+    max_probes: Optional[int],
+    no_seed: bool = False,
+) -> int:
     engine = _build_engine(config, dry_run)
     await engine.db.initialize(config.db_path)
-    await _seed_properties(engine.db, config)
+    if not no_seed:
+        await _seed_properties(engine.db, config)
 
     print(
         f"running session "
@@ -157,6 +162,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_run = sub.add_parser("run", help="run a session")
     p_run.add_argument("--dry-run", action="store_true", help="offline mode (no network)")
     p_run.add_argument("--max", type=int, default=None, help="max probe iterations")
+    p_run.add_argument(
+        "--no-seed",
+        action="store_true",
+        help="skip the idempotent SSOT seed auto-import",
+    )
     sub.add_parser("review", help="review classified probes")
     p_import = sub.add_parser("import", help="import SSOT seed into the database")
     p_import.add_argument("--seed", default="src/locus/data/locus_seed.json", help="seed JSON path")
@@ -168,7 +178,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.command == "status":
             return await _cmd_status(config)
         if args.command == "run":
-            return await _cmd_run(config, args.dry_run, args.max)
+            return await _cmd_run(config, args.dry_run, args.max, args.no_seed)
         if args.command == "review":
             return await _cmd_review(config)
         if args.command == "import":

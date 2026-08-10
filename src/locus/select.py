@@ -11,7 +11,7 @@ autoregressive extraction of the full passphrase.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import FrozenSet, List, Optional, Tuple
 
 from locus.models import Property
 
@@ -31,16 +31,32 @@ def total_remaining_entropy(properties: List[Property]) -> float:
     return sum(remaining_entropy(p) for p in properties)
 
 
-def select_property(properties: List[Property]) -> Optional[Property]:
+def select_property(
+    properties: List[Property], tried: FrozenSet[str] = frozenset()
+) -> Optional[Property]:
     """Pick the unresolved property with the highest remaining entropy.
 
+    ``tried`` lists keys already attempted *this session*: zero-entropy
+    properties (unresolvable hypotheses like ``length_13_16``) are excluded so
+    the engine cannot re-select the same one forever — it burns each at most
+    once per session, then the caller ends the session when None is returned.
+
+    Tie-break among equal-entropy candidates is by fewest votes, then by key,
+    so the selection is deterministic and rotates instead of always landing on
+    the first row (frame/format monotony).
+
     Returns:
-        The selected Property, or None if all properties are resolved.
+        The selected Property, or None if all properties are resolved or every
+        remaining candidate has already been tried this session.
     """
-    candidates = [p for p in properties if p.state not in ("confirmed", "denied")]
+    candidates = [
+        p
+        for p in properties
+        if p.state not in ("confirmed", "denied") and p.key not in tried
+    ]
     if not candidates:
         return None
-    return max(candidates, key=remaining_entropy)
+    return max(candidates, key=lambda p: (remaining_entropy(p), -p.votes, p.key))
 
 
 def in_phase5(

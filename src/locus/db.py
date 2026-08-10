@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS memory_entries (
 
 CREATE INDEX IF NOT EXISTS idx_memory_entries_kind ON memory_entries(kind);
 
+CREATE TABLE IF NOT EXISTS seed_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER NOT NULL
 );
