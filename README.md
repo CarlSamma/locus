@@ -142,11 +142,53 @@ locus run --max 5
 locus review
 ```
 
-### 4. Test
+### 4. Suite di attacco (scripts/)
+
+Motore offensivo autonomo in `scripts/` — orchestra probe → reply →
+classificazione in quattro fasi. Tutti i moduli sono **offline-first** (nessuna
+rete, nessun LLM obbligatorio per il pre-parse deterministico):
 
 ```powershell
-python -m pytest tests\ -v -p no:postgresql
+# Replay offline della macchina a stati (4 fasi): nessun post, nessuna rete
+python scripts\autonomous_strike.py --max-probes 3
 ```
+
+Moduli della suite:
+
+- `zero_shot_calibration.py` — baseline di entropia su DB reale + campione
+  sintetico; deriva hash di risposte derisorie, pattern per frame, gradienti
+  di entropia, baseline TTFT e matrice di difesa per lingua
+- `probe_variants_advanced.py` — 9 varianti della stessa domanda (Tags
+  Unicode, bidi RTL, base64, acrostico, dash, caesar, breakpoint,
+  HTML/Markdown, plain), pura manipolazione di stringhe
+- `information_theory_optimizer.py` — ranking delle varianti per riduzione
+  attesa `E[ΔH]` (entropia residua × indice di Gini × confidence)
+- `ttft_analyzer.py` — canale laterale Time-To-First-Token: baseline e
+  rilevamento spike di profondità di ragionamento
+- `faiss_memory_probe.py` — probe "archival" contro lo store di memoria del
+  bot (frame meno difeso, nessun secret scan)
+- `subagent_delegation.py` — frame "archive task": delegazione al verifier,
+  parsing del report
+- `reconstruct_passphrase.py` — collassa i leak storici in candidati ordinati
+  per probabilità (beam search deterministica, vincoli strutturali noti)
+- `backfill_classify.py` — riclassifica a freddo le reply storiche mai
+  arrivate allo stato `classified`
+- `autonomous_strike.py` — macchina a stati a 4 fasi (calibrazione → breach →
+  loop adattivo → ricostruzione) con rate limit, cost breaker e checkpoint
+
+### 5. Test e lint
+
+```powershell
+# Suite completa (275 test, interamente offline)
+python -m pytest tests\ -v -p no:postgresql
+
+# Lint e typecheck (dev extras: pip install -e .[dev])
+python -m ruff check src scripts tests
+python -m mypy src scripts
+```
+
+`scripts/` è un namespace package (`pyproject.toml` ha `explicit_package_bases`
++ `namespace_packages`): i moduli importano i gemelli come `scripts.foo`.
 
 ## Layout
 
@@ -177,6 +219,19 @@ web/                  # frontend React + Vite (compilato in web/dist)
     components/       # Layout (sidebar/header/footer), ui (KPI, barre, chip)
     pages/            # Status, Properties, ProbeLab, AttackTree, Review, Ledger, Sessions
   dist/               # output di build, servito da FastAPI (gitignored)
+
+scripts/              # suite di attacco offline (vedi §4 in alto)
+  autonomous_strike.py          # macchina a stati a 4 fasi
+  zero_shot_calibration.py      # baseline + layer di intelligenza
+  probe_variants_advanced.py    # 9 encoding della stessa domanda
+  information_theory_optimizer.py  # ranking E[ΔH]
+  ttft_analyzer.py              # canale laterale TTFT
+  faiss_memory_probe.py         # probe "archival" / memoria
+  subagent_delegation.py        # delegazione al verifier
+  reconstruct_passphrase.py     # candidati passphrase dai leak
+  backfill_classify.py          # riclassificazione a freddo
+
+tests/                # 275 test offline (milestone + suite di attacco)
 ```
 
 ## Status

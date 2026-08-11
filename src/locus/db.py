@@ -104,6 +104,14 @@ CREATE TABLE IF NOT EXISTS seed_meta (
     value TEXT NOT NULL
 );
 
+-- Strike engine (scripts/autonomous_strike.py): stato persistito del
+-- AutonomousStrikeEngine. KV semplice: ogni run scrive/legge il proprio
+-- checkpoint (fase, probe fired, entropia, candidati, calibrazione).
+CREATE TABLE IF NOT EXISTS strike_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER NOT NULL
 );

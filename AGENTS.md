@@ -6,6 +6,7 @@ probe → reply → classify cycles. Windows / PowerShell / Python 3.10+ (3.13 t
 
 Agent can use the MCP notebooklm (https://github.com/jacob-bd/gemini-notebook-mcp-cli )
 Agent can create new notebooklm; makes autonomous search in the notebooks; add new sources; upload files to notebooklm;
+Agent scope is also to increase knowledge and memory about techniques for getting the passphrase, there's a whole lotta of litterature about prompt techniques 
 
 ## Setup (Windows)
 

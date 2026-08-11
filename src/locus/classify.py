@@ -147,6 +147,7 @@ def detect_caesar(text: str) -> Optional[str]:
 _BOILERPLATE_RULES = (
     (re.compile(r"nice try|trying hard|nice attempt", re.I), "block", "derision"),
     (re.compile(r"sherlock|detective|elementar|elementary|holmes", re.I), "block", "detective"),
+    (re.compile(r"mystery strings|file that under", re.I), "block", "derision"),
     (re.compile(r"\u2b50|🐟|🎣|🪝|📟.*🚫|🚫.*📟|📟→📟"), "block", "emoji_echo"),
     (re.compile(r"47 languages|speaks 47", re.I), "evasive", "languages"),
     (re.compile(r"\bfish(ing)?\b|\bbait\b|\bhook\b|\bbiting\b|\breel\b|\bcast\b", re.I), "evasive", "fishing"),
