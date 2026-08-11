@@ -8,7 +8,7 @@ Convenzioni identiche agli altri test:
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, List, Optional
 
 import pytest
 from fastapi.testclient import TestClient
@@ -93,6 +93,7 @@ class FakeXClient:
         self.posted: List[dict] = []
         self.tweets: List[FakeTweet] = []
         self.our_user_id = 999
+        self.seen_since_ids: List[Optional[str]] = []
 
     def get_user(self, username: str):
         return FakeResponseData(FakeUser(self.our_user_id))
@@ -103,7 +104,13 @@ class FakeXClient:
         return FakeResponseData({"id": tid})
 
     def get_users_mentions(self, **kwargs):
-        return FakeResponseData(self.tweets)
+        since_id = kwargs.get("since_id")
+        self.seen_since_ids.append(since_id)
+        data = self.tweets
+        if since_id is not None:
+            # Come il trasporto reale: restituisce solo mention più nuove.
+            data = [t for t in self.tweets if int(t.id) > int(since_id)]
+        return FakeResponseData(data)
 
 
 # ── Fixtures ───────────────────────────────────────────────────
@@ -225,6 +232,62 @@ def test_probes_poll(client: TestClient) -> None:
     resp = client.post("/api/probes/poll")
     assert resp.status_code == 200
     assert resp.json()["replies"] == []
+
+
+def test_probes_poll_since_id_from_body_filters_old_replies(
+    config: LocusConfig, db: Database
+) -> None:
+    """Gap I: since_id passato nel body → solo le reply più nuove tornano."""
+    x_fake = FakeXClient()
+    x_fake.tweets = [FakeTweet("10", "vecchia"), FakeTweet("20", "nuova")]
+    engine = _build_engine(config, db, x_fake)
+    app = create_app(config=config, engine=engine)
+    with TestClient(app) as c:
+        # Nessun since_id → tutte le reply recenti, cursore non inoltrato.
+        r_all = c.post("/api/probes/poll")
+        assert r_all.status_code == 200
+        body_all = r_all.json()
+        assert [t["id"] for t in body_all["replies"]] == ["10", "20"]
+        assert x_fake.seen_since_ids[-1] is None
+
+        # since_id=10 nel body → la reply "vecchia" (10) viene filtrata.
+        r_inc = c.post("/api/probes/poll", json={"since_id": "10"})
+        assert r_inc.status_code == 200
+        body_inc = r_inc.json()
+        assert [t["id"] for t in body_inc["replies"]] == ["20"]
+        assert x_fake.seen_since_ids[-1] == "10"
+        assert body_inc.get("since_id") == "10"
+
+
+async def test_probes_poll_since_id_derived_from_db(
+    config: LocusConfig, db: Database
+) -> None:
+    """Gap I: since_id derivato dal reply_id già persistito nelle probe."""
+    now = "2026-08-11T00:00:00+00:00"
+    await db.execute(
+        "INSERT INTO probes "
+        "(id, session_id, property_key, frame_alias, text, tweet_id, posted_at, status, created_at, reply_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("p1", "s1", "manual", "neutral", "x", "t1", now, "replied", now, "10"),
+    )
+    await db.commit()
+
+    x_fake = FakeXClient()
+    x_fake.tweets = [
+        FakeTweet("5", "vecchissima"),
+        FakeTweet("10", "vecchia"),
+        FakeTweet("20", "nuova"),
+    ]
+    engine = _build_engine(config, db, x_fake)
+    app = create_app(config=config, engine=engine)
+    with TestClient(app) as c:
+        resp = c.post("/api/probes/poll")
+        assert resp.status_code == 200
+        body = resp.json()
+        # Cursore derivato dal DB (10) → solo id 20 resta.
+        assert [t["id"] for t in body["replies"]] == ["20"]
+        assert body.get("since_id") == "10"
+        assert x_fake.seen_since_ids == ["10"]
 
 
 def test_run_dry_run(client: TestClient) -> None:

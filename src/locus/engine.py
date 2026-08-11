@@ -15,8 +15,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
 from datetime import datetime, timezone
+from math import ceil
 from typing import List, Optional
 
 from locus.classify import Classifier
@@ -35,7 +37,7 @@ from locus.models import (
     SessionRecord,
 )
 from locus.probe import ProbeGenerator
-from locus.select import in_phase5, remaining_entropy, select_property
+from locus.select import in_phase5, remaining_entropy, select_property, total_remaining_entropy
 from locus.target import TargetClient
 from locus.trust import sanitize_untrusted
 
@@ -87,6 +89,14 @@ class Engine:
         # Keys of zero-entropy properties already attempted this session, so
         # the engine burns each once and then ends instead of looping (gap 5).
         self._zero_tried: set = set()
+        # Gap A: stato Phase5. ``_phase5_active`` e' esposto (leggibile da
+        # API/cli) e ``_phase5_segment`` avanza ad ogni iterazione autoregressiva,
+        # cosi' ogni probe della fase 5 bersaglia il segmento successivo.
+        self._phase5_active: bool = False
+        self._phase5_segment: int = 0
+        # Gap J: budget probe scelto per la sessione in corso (visibile ad
+        # API/CLI); valorizzato da run_session prima del loop.
+        self._probe_budget: int = 0
 
     # ── Session lifecycle ─────────────────────────────────────
 
@@ -179,6 +189,13 @@ class Engine:
                 total,
             )
 
+        # Gap A: quando in fase 5 ED abilitata, si devia verso l'estrazione
+        # autoregressiva di un singolo segmento della passphrase invece del
+        # probing binario di una singola proprieta'. Con phase5_enabled=False
+        # (default, INERTE) si prosegue col comportamento attuale.
+        phase5_active = in5 and self.config.phase5_enabled
+        self._phase5_active = phase5_active
+
         frame = await self._pick_frame()
 
         # BRANCH: generate probe (weave in recalled prior probes/intel)
@@ -189,7 +206,21 @@ class Engine:
                 query, top_k=self.config.dedup_top_k
             )
             context = "; ".join(recalled)[:600]
-        probe_text = await self.generator.generate(selected, frame, context=context)
+
+        if phase5_active:
+            self._phase5_segment += 1
+            frame = await self._pick_phase5_frame()
+            logger.info(
+                "phase5_active session_id=%s segment=%d frame=%s",
+                session_id,
+                self._phase5_segment,
+                frame.alias,
+            )
+            probe_text = await self.generator.generate_phase5(
+                segment=self._phase5_segment, frame=frame, context=context
+            )
+        else:
+            probe_text = await self.generator.generate(selected, frame, context=context)
 
         # Dedup guard: never ask the same question twice
         if self.memory is not None:
@@ -217,6 +248,11 @@ class Engine:
                 return probe
         else:
             probe.tweet_id = "dry-run"
+
+        # Transizione a "posted": fissa l'istante di pubblicazione, usato dal
+        # canale laterale sulla latenza di risposta (Z-score tra posted_at e
+        # replied_at, gap B).
+        probe.posted_at = datetime.now(timezone.utc)
 
         await self._persist_probe(probe)
         if self.memory is not None:
@@ -264,6 +300,26 @@ class Engine:
 
         return probe
 
+    async def _session_probe_budget(self) -> int:
+        """Calcola il budget probe per la sessione corrente (Gap J).
+
+        Con ``enable_adaptive_probe_cap`` disattivato (default) restituisce il
+        tetto fisso ``max_probes_per_session`` (comportamento storico immutato).
+        Quando abilitato, il budget scala con l'entropia totale residua:
+        ``ceil(total_remaining_entropy / entropy_per_probe)``, clampato tra
+        ``adaptive_min_probe_cap`` e ``max_probes_per_session`` così una sessione
+        quasi esaurita non spreca iterazioni inutilmente (mai sotto il pavimento).
+        """
+        if not self.config.enable_adaptive_probe_cap:
+            return self.config.max_probes_per_session
+        properties = await self._load_properties()
+        total = total_remaining_entropy(properties)
+        budget = ceil(total / self.config.adaptive_entropy_per_probe)
+        return max(
+            self.config.adaptive_min_probe_cap,
+            min(budget, self.config.max_probes_per_session),
+        )
+
     async def run_session(
         self,
         max_probes: Optional[int] = None,
@@ -282,7 +338,17 @@ class Engine:
         session_id = session_id or await self.start_session()
         if reap_late:
             await self.harvest_late_replies(session_id)
-        limit = max_probes or self.config.max_probes_per_session
+        # Gap J: senza override esplicito il limite deriva dal budget adattivo
+        # (o dal tetto fisso quando il gate è inerto). L'override ``max_probes``
+        # resta prioritario per i call-site che vogliono un limite esatto.
+        limit = max_probes or await self._session_probe_budget()
+        self._probe_budget = limit
+        logger.info(
+            "session_probe_budget session_id=%s budget=%d adaptive=%s",
+            session_id,
+            limit,
+            self.config.enable_adaptive_probe_cap,
+        )
         results: List[Probe] = []
         consecutive_skips = 0
         for _ in range(limit):
@@ -327,6 +393,21 @@ class Engine:
         usage = {r["frame_alias"]: r["c"] for r in rows}
         return min(active, key=lambda f: (usage.get(f.alias, 0), f.alias))
 
+    async def _pick_phase5_frame(self) -> Frame:
+        """Seleziona il frame "Extractor Prime" (P9) per la fase 5 (Gap A).
+
+        Cerca tra i frame attivi uno il cui alias/persona richiami P9 o
+        "Extractor Prime"; se non e' presente (es. DB senza seed) ripiega sul
+        frame Phase5 dedicato definito in :meth:`ProbeGenerator._phase5_frame`.
+        """
+        frames = await self._load_frames()
+        active = [f for f in frames if f.status == "active"]
+        for f in active:
+            haystack = (f.alias + " " + f.persona).lower()
+            if "p9" in haystack or "extractor prime" in haystack:
+                return f
+        return ProbeGenerator._phase5_frame()
+
     async def _find_reply_for(self, tweet_id: str) -> Optional[dict]:
         """One incremental mention poll; return the reply targeting `tweet_id`.
 
@@ -353,9 +434,22 @@ class Engine:
             reply = await self._find_reply_for(tweet_id)
             if reply is not None:
                 return reply
-            await self._sleep(self.config.poll_interval_seconds)
+            await self._sleep(self._jittered_poll_interval())
         logger.info("poll_timeout session_id=%s tweet_id=%s", session_id, tweet_id)
         return None
+
+    def _jittered_poll_interval(self) -> float:
+        """Intervallo di polling con jitter randomizzato (Gap H).
+
+        Ritorna ``poll_interval_seconds * (1 + jitter)`` con un fattore
+        uniforme in ``[-jitter, +jitter]``; con jitter=0 (o <=0) resta fisso,
+        così gli off-line test possono restare deterministici.
+        """
+        base = self.config.poll_interval_seconds
+        jitter = getattr(self.config, "poll_interval_jitter", 0.0)
+        if jitter <= 0:
+            return base
+        return base * (1 + random.uniform(-jitter, jitter))
 
     async def harvest_late_replies(self, session_id: str) -> int:
         """Re-harvest replies for probes stuck in "posted" (gap 1).
@@ -504,10 +598,18 @@ class Engine:
         return Property(**dict(row))
 
     async def _persist_probe(self, probe: Probe) -> None:
+        # posted_at: marked logicamente o, se assente sul modello, corrente.
+        # Punto di ingresso per il canale laterale sulla latenza di risposta
+        # (Z-score tra posted_at e replied_at, gap B).
+        posted_at = (
+            probe.posted_at.isoformat()
+            if probe.posted_at is not None
+            else datetime.now(timezone.utc).isoformat()
+        )
         await self.db.execute(
             """INSERT INTO probes
-               (id, session_id, property_key, frame_alias, text, tweet_id, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+              (id, session_id, property_key, frame_alias, text, tweet_id, status, created_at, posted_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 probe.id,
                 probe.session_id,
@@ -517,6 +619,7 @@ class Engine:
                 probe.tweet_id,
                 probe.status,
                 probe.created_at.isoformat(),
+                posted_at,
             ),
         )
         await self.db.commit()

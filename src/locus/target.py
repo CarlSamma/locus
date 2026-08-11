@@ -99,6 +99,10 @@ class TargetClient:
     async def poll_replies(self, since_id: Optional[str] = None) -> List[dict]:
         """Fetch tweets mentioning our handle (target replies to our probes).
 
+        Paga oltre il limite di ``max_results`` seguendo il ``next_token`` nel
+        ``meta`` della risposta, così le reply oltre i 100 del primo batch non
+        vanno perse; i duplicati tra pagine consecutive vengono eliminati.
+
         Returns:
             List of reply dicts with keys: id, text, author_id, created_at,
             in_reply_to_tweet_id.
@@ -106,41 +110,58 @@ class TargetClient:
         user_id = await self._resolve_our_user_id()
         if not user_id:
             return []
+        replies: List[dict] = []
+        seen: set = set()
+        pagination_token: Optional[str] = None
         try:
-            response = await self._retry(
-                lambda: self._get_transport().get_users_mentions(
-                    id=user_id,
-                    since_id=since_id,
-                    max_results=100,
-                    tweet_fields=[
+            for _ in range(self.config.max_poll_pages):
+                kwargs: dict = {
+                    "id": user_id,
+                    "since_id": since_id,
+                    "max_results": self.config.max_poll_results,
+                    "tweet_fields": [
                         "created_at",
                         "in_reply_to_user_id",
                         "referenced_tweets",
                     ],
-                    expansions=["referenced_tweets.id"],
+                    "expansions": ["referenced_tweets.id"],
+                }
+                if pagination_token is not None:
+                    kwargs["pagination_token"] = pagination_token
+                response = await self._retry(
+                    lambda kwargs=kwargs: self._get_transport().get_users_mentions(
+                        **kwargs
+                    )
                 )
-            )
+                if response.data:
+                    for tweet_data in response.data:
+                        rid = str(tweet_data.id)
+                        if rid in seen:
+                            continue
+                        seen.add(rid)
+                        replies.append(
+                            {
+                                "id": rid,
+                                "text": tweet_data.text,
+                                "author_id": str(tweet_data.author_id)
+                                if hasattr(tweet_data, "author_id")
+                                else "",
+                                "created_at": (
+                                    tweet_data.created_at
+                                    or datetime.now(timezone.utc)
+                                ).isoformat(),
+                                "in_reply_to_tweet_id": self._get_reply_to_id(
+                                    tweet_data
+                                ),
+                            }
+                        )
+                # Segue il cursore di paginazione finché esiste.
+                meta = getattr(response, "meta", None) or {}
+                pagination_token = meta.get("next_token")
+                if not pagination_token:
+                    break
         except Exception as e:
             raise TwitterError(f"Failed to poll mentions: {e}", original=e) from e
-
-        if not response.data:
-            return []
-
-        replies: List[dict] = []
-        for tweet_data in response.data:
-            replies.append(
-                {
-                    "id": str(tweet_data.id),
-                    "text": tweet_data.text,
-                    "author_id": str(tweet_data.author_id)
-                    if hasattr(tweet_data, "author_id")
-                    else "",
-                    "created_at": (
-                        tweet_data.created_at or datetime.now(timezone.utc)
-                    ).isoformat(),
-                    "in_reply_to_tweet_id": self._get_reply_to_id(tweet_data),
-                }
-            )
         return replies
 
     async def _resolve_our_user_id(self) -> Optional[str]:

@@ -100,6 +100,9 @@ class TokenUsage:
     total_failures: int = 0
     total_cost_usd: float = 0.0
     per_model: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Costi (USD per milione di token) — Gap G: provengono dalla configurazione.
+    input_price_per_m: float = 3.0  # preserved: default storico
+    output_price_per_m: float = 15.0  # preserved: default storico
 
     def record(
         self,
@@ -120,7 +123,7 @@ class TokenUsage:
         stats["calls"] += 1
         stats["prompt_tokens"] += prompt_tokens
         stats["completion_tokens"] += completion_tokens
-        p_cost, c_cost = 3.0, 15.0
+        p_cost, c_cost = self.input_price_per_m, self.output_price_per_m
         self.total_cost_usd += (prompt_tokens / 1_000_000) * p_cost
         self.total_cost_usd += (completion_tokens / 1_000_000) * c_cost
 
@@ -148,6 +151,21 @@ class LLMClient:
     MAX_RETRIES = 3
     RETRY_BASE_DELAY = 2.0  # seconds
 
+    # Nomi di eccezioni transitorie (timeout/connessione) riconosciute per il retry.
+    _TRANSIENT_ERROR_NAMES = {
+        "APITimeoutError",
+        "APIConnectionError",
+        "APIConnectError",
+        "TimeoutError",
+        "ConnectionError",
+        "ConnectError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "ReadError",
+        "RemoteProtocolError",
+        "TimeoutException",
+    }
+
     def __init__(
         self,
         config: LocusConfig,
@@ -156,7 +174,10 @@ class LLMClient:
         self.config = config
         self._transport = transport  # injectable AsyncOpenAI-compatible client
         self._circuit = CircuitBreaker()
-        self._usage = TokenUsage()
+        self._usage = TokenUsage(
+            input_price_per_m=config.llm_input_price_per_m,
+            output_price_per_m=config.llm_output_price_per_m,
+        )
         self._models = {
             ModelTier.PRIMARY: config.llm_model_primary,
             ModelTier.HARD: config.llm_model_hard,
@@ -239,6 +260,26 @@ class LLMClient:
             original=last_error,
         )
 
+    def _is_retriable(self, exc: Exception) -> bool:
+        """Determina se un errore merita il retry (Gap G).
+
+        Ritenta solo errori lato server/transitori: HTTP 5xx, 429 rate-limit,
+        timeout e errori di connessione. Gli errori client 4xx (400/401/403/404)
+        non vengono ritentati e falliscono subito (fail fast).
+        """
+        # Errore HTTP esplicito (trasporto OpenAI o equivalente duck-typed).
+        status = getattr(exc, "status_code", None)
+        if isinstance(status, int):
+            # 429 rate-limit e 5xx sono retriable; i 4xx client no.
+            return status == 429 or 500 <= status < 600
+        # Timeout e problemi di rete, riconosciuti per nome o per tipo built-in.
+        if type(exc).__name__ in self._TRANSIENT_ERROR_NAMES:
+            return True
+        if isinstance(exc, (TimeoutError, asyncio.TimeoutError, ConnectionError)):
+            return True
+        # Errore non classificato: fail fast (non ritentare).
+        return False
+
     async def _call_with_retry(
         self,
         system: str,
@@ -284,9 +325,11 @@ class LLMClient:
 
             except Exception as e:
                 last_error = e
+                # Gap G: fail fast sugli errori client 4xx; retry solo su 5xx/429/timeout/connessione.
+                if not self._is_retriable(e) or attempt >= self.MAX_RETRIES - 1:
+                    break
                 wait_time = self.RETRY_BASE_DELAY ** (attempt + 1)
-                if attempt < self.MAX_RETRIES - 1:
-                    await asyncio.sleep(wait_time)
+                await asyncio.sleep(wait_time)
 
         self._usage.record(model=model, success=False)
         raise LLMError(

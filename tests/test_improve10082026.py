@@ -16,6 +16,7 @@ Coverage map:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 import pytest
@@ -284,6 +285,55 @@ async def test_engine_tracks_since_id(config: LocusConfig, db: Database) -> None
     x_fake.replies_by_tweet["2"] = {"id": "150", "text": "maybe", "in_reply_to": "2"}
     await engine.run_iteration(session, dry_run=False)
     assert x_fake.seen_since_ids and x_fake.seen_since_ids[-1] == "100"
+
+
+# ── Gap B: posted_at persistito dall'engine ───────────────────
+
+
+async def test_engine_persists_posted_at(config: LocusConfig, db: Database) -> None:
+    """Gap B: dopo il persist, la riga probes ha un posted_at non-null ~ ora."""
+    x_fake = FakeXClient()
+    x_fake.replies_by_tweet["1"] = {"id": "100", "text": "yes I do!", "in_reply_to": "1"}
+    engine = _build_engine(config, db, x_fake)
+    session = await engine.start_session()
+    probe = await engine.run_iteration(session, dry_run=False)
+    assert probe is not None and probe.status == "classified"
+
+    row = await db.fetchone(
+        "SELECT posted_at FROM probes WHERE id = ?", (probe.id,)
+    )
+    assert row is not None and row["posted_at"] is not None
+    posted = datetime.fromisoformat(row["posted_at"])
+    # posted_at deve essere vicino a "adesso" (tolleranza ampia di 5 min).
+    assert abs((datetime.now(timezone.utc) - posted).total_seconds()) < 300
+
+
+async def test_update_probe_preserves_posted_at(config: LocusConfig, db: Database) -> None:
+    """Gap B: _update_probe non deve sovrascrivere posted_at."""
+    x_fake = FakeXClient()  # nessuna reply → il probe resta "posted"
+    engine = _build_engine(config, db, x_fake)
+    session = await engine.start_session()
+    probe = await engine.run_iteration(session, dry_run=False)
+    assert probe is not None and probe.status == "posted"
+
+    row = await db.fetchone(
+        "SELECT posted_at FROM probes WHERE id = ?", (probe.id,)
+    )
+    assert row is not None and row["posted_at"] is not None
+    before = row["posted_at"]
+
+    # Simula una reply tardiva via _update_probe: status cambia, posted_at no.
+    probe.reply_id = "999"
+    probe.reply_text = "arrived late"
+    probe.replied_at = datetime.now(timezone.utc)
+    probe.status = "replied"
+    await engine._update_probe(probe)
+
+    row2 = await db.fetchone(
+        "SELECT posted_at, status FROM probes WHERE id = ?", (probe.id,)
+    )
+    assert row2["posted_at"] == before
+    assert row2["status"] == "replied"
 
 
 async def test_run_session_continues_after_single_skip(config: LocusConfig, db: Database) -> None:

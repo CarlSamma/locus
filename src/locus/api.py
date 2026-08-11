@@ -103,6 +103,10 @@ class PostRequest(BaseModel):
     frame_alias: str = "neutral"
 
 
+class PollRequest(BaseModel):
+    since_id: Optional[str] = None
+
+
 # ── Factory app ────────────────────────────────────────────────
 
 
@@ -477,13 +481,22 @@ def _register_routes(app: FastAPI) -> None:
         return {"tweet_id": tweet_id, "url": url, "session_id": session_id, "probe_id": probe_id}
 
     @app.post("/api/probes/poll")
-    async def poll() -> Dict[str, Any]:
+    async def poll(req: Optional[PollRequest] = None) -> Dict[str, Any]:
         engine = _require_engine(app)
+        # since_id: accettato dal body oppure derivato dal DB come cursore
+        # incrementale (stessa logica di Engine.start_session), così i poll
+        # ripetuti restituiscono solo le reply più recenti dell'ultima vista.
+        since_id = req.since_id if req is not None else None
+        since_id = since_id or await _derive_since_id(engine)
         try:
-            replies = await engine.target.poll_replies()
+            replies = await engine.target.poll_replies(since_id=since_id)
         except TwitterError as exc:
             raise HTTPException(502, f"poll failed: {exc}") from exc
-        return {"replies": replies}
+        payload: Dict[str, Any] = {"replies": replies}
+        if since_id:
+            # Riecheggia il cursore usato (additivo, retro-compatibile con la UI).
+            payload["since_id"] = since_id
+        return payload
 
     # ── Config / health ─────────────────────────────────────
 
@@ -516,6 +529,27 @@ def _register_routes(app: FastAPI) -> None:
 
 
 # ── Helpers ────────────────────────────────────────────────────
+
+
+async def _derive_since_id(engine: Any) -> Optional[str]:
+    """Deriva il cursore since_id dalla reply più recente persistita.
+
+    Scansiona ``reply_id`` su tutte le probe e restituisce il massimo
+    (confronto numerico, come in ``Engine.start_session``): i poll successivi
+    chiederanno al trasporto solo mention più nuove di questo id.
+    """
+    rows = await engine.db.fetchall(
+        "SELECT reply_id FROM probes WHERE reply_id IS NOT NULL AND reply_id != ''"
+    )
+    newest: Optional[int] = None
+    for row in rows:
+        try:
+            rid = int(row["reply_id"])
+        except (TypeError, ValueError):
+            continue
+        if newest is None or rid > newest:
+            newest = rid
+    return str(newest) if newest is not None else None
 
 
 async def _persist_probe(

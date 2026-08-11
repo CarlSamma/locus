@@ -4,9 +4,9 @@ Only the two memory patterns Locus actually needs (vs. aware's 7 types):
 1. Dedup: avoid re-asking the same question as an earlier probe.
 2. Recall: surface the most relevant past probes/intel when generating a new one.
 
-Embeddings default to a deterministic n-gram hashing embedder (no model
-required) so the framework runs offline; a real embedder can be injected for
-production.
+Embeddings default a un embedder TF-IDF lessicale deterministico (nessun modello
+richiesto) cosi' il framework gira offline; un vero embedder puo' essere
+iniettato per la produzione.
 """
 
 from __future__ import annotations
@@ -104,11 +104,126 @@ class NgramHashEmbedder:
         return [x / norm for x in vec]
 
 
+_STOPWORDS = frozenset(
+    {
+        "a", "an", "the", "and", "or", "but", "if", "then", "else", "of", "to",
+        "in", "on", "for", "with", "at", "by", "from", "up", "about", "into",
+        "over", "after", "before", "is", "are", "was", "were", "be", "been",
+        "being", "am", "do", "does", "did", "have", "has", "had", "will",
+        "would", "can", "could", "should", "may", "might", "must", "shall",
+        "it", "i", "you", "he", "she", "we", "they", "them", "his", "her",
+        "its", "this", "that", "these", "those", "what", "which", "who",
+        "whom", "whose", "how", "why", "when", "where", "not", "no", "yes",
+        "all", "any", "each", "some", "such", "only", "own", "same", "so",
+        "than", "too", "very", "just", "also", "as", "at", "or",
+    }
+)
+
+
+class TfidfEmbedder:
+    """Embedder lessicale TF-IDF deterministico (offline / test).
+
+    Costruisce un vettore term-frequency pesato IDF e L2-normalizzato: ogni
+    parola significativa del testo (minuscolo, stopword escluse) contribuisce
+    al suo indice di feature-hashing, moltiplicata per il peso IDF quando un
+    corpus e' disponibile.  A differenza dell'approccio ``NgramHashEmbedder``
+    (basato su n-grammi di caratteri, soggetto a collisioni e a rumore fra
+    parole non correlate), questo embedder separa meglio i duplicati prossimi
+    (coseno ~1.0) dai testi non correlati.  Nessuna dipendenza esterna oltre
+    alla stdlib (``math``).
+    """
+
+    def __init__(
+        self,
+        dim: int = 256,
+        n_min: int = 0,
+        n_max: int = 0,
+        corpus: Optional[List[str]] = None,
+        smooth_idf: bool = True,
+    ) -> None:
+        self._dim = dim
+        self._n_min = n_min
+        self._n_max = n_max
+        # dizionario feature -> idf; vuoto se nessun corpus (peso 1.0)
+        self._idf: dict[str, float] = {}
+        if corpus:
+            self._idf = self._compute_idf(corpus, smooth_idf)
+
+    @property
+    def dimension(self) -> int:
+        return self._dim
+
+    def idf(self, feature: str) -> Optional[float]:
+        """Peso IDF per una feature (None se non vista o nessun corpus).
+
+        Accetta sia la forma completa (``w:parola``) sia la parola nuda; le
+        stopword non compaiono mai nel dizionario IDF.
+        """
+        key = feature if ":" in feature else f"w:{feature}"
+        return self._idf.get(key)
+
+    def _features(self, text: str) -> List[str]:
+        low = text.lower()
+        feats: List[str] = []
+        # n-grammi di caratteri opzionali (analoghi a NgramHashEmbedder)
+        for n in range(self._n_min, self._n_max + 1):
+            if n > 0:
+                for i in range(len(low) - n + 1):
+                    feats.append(f"c{n}:{low[i : i + n]}")
+        # token di parola (il nucleo del segnale lessicale)
+        for tok in _WORD_RE.findall(low):
+            if tok not in _STOPWORDS:
+                feats.append(f"w:{tok}")
+        return feats
+
+    @staticmethod
+    def _compute_idf(corpus: List[str], smooth_idf: bool) -> dict[str, float]:
+        n_docs = len(corpus)
+        df: dict[str, int] = {}
+        for doc in corpus:
+            seen = set()
+            for feat in TfidfEmbedder._features_word_only(doc):
+                if feat not in seen:
+                    seen.add(feat)
+                    df[feat] = df.get(feat, 0) + 1
+        idf: dict[str, float] = {}
+        for feat, count in df.items():
+            if smooth_idf:
+                idf[feat] = math.log((1.0 + n_docs) / (1.0 + count)) + 1.0
+            else:
+                idf[feat] = math.log(n_docs / (1.0 + count))
+        return idf
+
+    @staticmethod
+    def _features_word_only(text: str) -> List[str]:
+        return [
+            f"w:{tok}"
+            for tok in _WORD_RE.findall(text.lower())
+            if tok not in _STOPWORDS
+        ]
+
+    @staticmethod
+    def _hash_feature(feature: str, dim: int) -> int:
+        digest = hashlib.md5(feature.encode("utf-8")).digest()
+        return int.from_bytes(digest[:8], "little") % dim
+
+    async def encode(self, text: str) -> List[float]:
+        vec = [0.0] * self._dim
+        for feat in self._features(text):
+            weight = self._idf.get(feat, 1.0)
+            idx = self._hash_feature(feat, self._dim)
+            vec[idx] += weight
+        norm = math.sqrt(sum(x * x for x in vec))
+        if norm == 0:
+            return vec
+        return [x / norm for x in vec]
+
+
 class HashEmbedder:
     """Legacy SHA-256 embedder — kept for API compatibility.
 
     Deprecated: SHA-256 hashes are orthogonally random, so cosine similarity
-    between them is pure noise.  Use :class:`NgramHashEmbedder` (the default).
+    between them is pure noise.  Use :class:`TfidfEmbedder` (the default).
     """
 
     def __init__(self, dim: int = 256) -> None:
@@ -129,7 +244,7 @@ class Memory:
 
     def __init__(self, db: Database, embedder: Optional[Any] = None) -> None:
         self.db = db
-        self.embedder = embedder or NgramHashEmbedder()
+        self.embedder = embedder or TfidfEmbedder()
 
     async def remember(self, text: str, kind: str = "probe") -> str:
         """Store a probe/intel text with its embedding. Returns the id.
