@@ -79,26 +79,81 @@ La finestra permette di:
 - **Post to X** → pubblica il tweet con menzione a `@HackingA0`
 - **Poll replies** → legge le risposte del target
 
-### 2. Web app (FastAPI + React)
+### 2. Web app (FastAPI + React) — avvio passo-passo
 
-Il backend FastAPI (`src/locus/api.py`) espone le stesse funzionalità via REST
-e serve la dashboard React compilata in `web/dist`.
+La web app è una dashboard che si apre nel browser. Serve: il backend FastAPI
+(`src/locus/api.py`) che espone le API e serve la dashboard React (in `web/dist`).
+
+> 💡 **Nota per chi inizia**: per la **sola visualizzazione** della dashboard
+> (Pagine Status, Proprietà, Attack Tree, Ledger, Sessions…) **non servono le
+> chiavi** di X/OpenRouter. Le chiavi servono solo alle azioni live (Genera probe,
+> Posta su X, Poll). Quindi la prima volta puoi comunque aprire la dashboard.
+
+#### Prima volta (una tantum)
+
+Apri **PowerShell** nella cartella del progetto, poi esegui in ordine questi blocchi.
+Non saltare passaggi; se un comando dà errore, fermati e controlla prima di continuare.
+
+**① Installa le dipendenze Python e il pacchetto**
 
 ```powershell
-# 1) (una tantum) compilare il frontend → web/dist
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .
+```
+
+Se vedi `(venv)` all'inizio del prompt, la "venv" è attiva. Se `python`
+non viene trovato, controlla di avere installato **Python 3.10+** dal sito
+python.org (spunta "Add to PATH" durante l'installazione).
+
+**② Installa il frontend React**
+
+```powershell
 cd web
 npm install
 npm run build
 cd ..
+```
 
-# 2) avviare il server (API + SPA sulla stessa porta)
+> `npm` viene installato insieme a **Node.js 18+**. Se `npm` non è riconosciuto,
+> scarica e installa Node.js da nodejs.org, poi riapri PowerShell e riprova.
+
+**③ Copia il file delle credenziali** (facoltativo per la sola visualizzazione)
+
+```powershell
+copy .env.example .env
+```
+
+Poi apri `.env` con un editor di testo e inserisci le chiavi se vuoi usare le
+azioni live (Generate / Post / Poll). Se non hai chiavi, lascialo così: la
+dashboard si apre comunque.
+
+#### Avvio (oggi e ogni volta dopo)
+
+**④ Lancia il server**
+
+```powershell
 python -m uvicorn locus.api:app --host 127.0.0.1 --port 8000
 ```
 
-Aprire `http://127.0.0.1:8000`. Documentazione interattiva delle API:
-`http://127.0.0.1:8000/api/docs`.
+Vedrai qualcosa tipo `Application startup complete` e `Uvicorn running on
+http://127.0.0.1:8000`. Non chiudere questa finestra finché usi la dashboard.
 
-Viste della dashboard:
+**⑤ Apri il browser**
+
+Vai su **http://127.0.0.1:8000**. Per la documentazione interattiva delle API:
+**http://127.0.0.1:8000/api/docs**.
+
+Per **fermare** il server: torna nella finestra PowerShell e premi `Ctrl+C`.
+
+#### Se riavvii il computer
+
+Ripeti solo i passaggi ④ e ⑤ (la venv, le dipendenze e la build restano salvate).
+Se per errore chiudi PowerShell senza attivare la venv, dapprima esegui:
+`.\.venv\Scripts\Activate.ps1` e poi il passo ④.
+
+#### Viste della dashboard
 
 - **Status** — KPI entropia, progresso Fase 5, tabella stato proprietà
 - **Proprietà** — universe delle proprietà con barre di entropia
@@ -108,7 +163,7 @@ Viste della dashboard:
 - **Ledger & Intel** — esiti immutabili e leak raccolti
 - **Sessions** — storico sessioni di campagna
 
-In sviluppo (hot reload frontend + proxy verso FastAPI):
+#### Sviluppo (avanzato, con hot reload — non per l'utente medio)
 
 ```powershell
 python -m uvicorn locus.api:app --host 127.0.0.1 --port 8000
