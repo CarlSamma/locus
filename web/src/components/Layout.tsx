@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "react-router-dom";
+import { api } from "../api";
 
 const NAV = [
   { to: "/", label: "Status", icon: "dashboard", end: true },
@@ -108,7 +110,9 @@ export function StatusChip({ state }: { state: string }) {
   );
 }
 
-export function FooterStrip({ counts }: { counts: Record<string, number> }) {
+export function FooterStrip() {
+  const { data } = useQuery({ queryKey: ["status"], queryFn: api.status });
+  const counts = data?.counts ?? {};
   const items: Array<[string, number]> = [
     ["PROBES", counts["probes"] ?? 0],
     ["INTEL", counts["intel"] ?? 0],

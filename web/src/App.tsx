@@ -14,7 +14,7 @@ function Shell() {
       <Sidebar target="@HackingA0" />
       <div className="ml-[240px] flex-1 flex flex-col relative">
         <Outlet />
-        <FooterStrip counts={{ probes: 0, intel: 0, ledger: 0, frames: 0, memory_entries: 0 }} />
+        <FooterStrip />
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { api, type Probe } from "../api";
+import { api, type GeneratedProbe } from "../api";
 import { Spinner } from "../components/ui";
 type LogLine = { kind: "info" | "ok" | "err" | "warn"; text: string };
 
@@ -21,7 +21,7 @@ export default function ProbeLab() {
   const [dryRun, setDryRun] = useState(true);
   const [sessionId, setSessionId] = useState("");
   const [pollingSession, setPollingSession] = useState<string | null>(null);
-  const [generated, setGenerated] = useState<Probe | null>(null);
+  const [generated, setGenerated] = useState<GeneratedProbe | null>(null);
 
   const { data: properties } = useQuery({ queryKey: ["properties"], queryFn: api.properties });
   const { data: frames } = useQuery({ queryKey: ["frames"], queryFn: api.frames });
@@ -181,9 +181,8 @@ export default function ProbeLab() {
                   [{generated.property_key}]
                 </span>
                 <span className="font-mono text-[10px] text-textSecondary bg-white/5 px-1.5 py-0.5 rounded">
-                  {generated.frame}
+                  {generated.frame_alias}
                 </span>
-                <span className="ml-auto font-mono text-[10px] text-textSecondary">{generated.status}</span>
               </div>
               <p className="font-mono text-sm text-textPrimary/90 leading-relaxed">“{generated.text}”</p>
             </div>

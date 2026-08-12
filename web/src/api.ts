@@ -19,31 +19,45 @@ export interface Frame {
   created_at: string;
 }
 
+export interface Classification {
+  pattern: string;
+  boolean: boolean;
+  score: number;
+  leaks: string[];
+  rationale: string;
+}
+
 export interface Probe {
-  id: number;
+  id: string;
+  session_id: string | null;
   property_key: string;
-  frame: string;
+  frame_alias: string;
   text: string;
   tweet_id: string | null;
   posted_at: string | null;
   reply_id: string | null;
   reply_text: string | null;
-  classification: string | null;
+  classification: Classification | null;
   score: number;
   status: string;
-  session_id: string | null;
   created_at: string;
 }
 
 export interface ReviewItem {
-  id: number;
+  id: string;
   property_key: string;
-  frame: string;
+  frame_alias: string;
   text: string;
   reply_text: string | null;
-  classification: string | null;
+  classification: Classification | null;
   score: number;
   status: string;
+}
+
+export interface GeneratedProbe {
+  text: string;
+  property_key: string;
+  frame_alias: string;
 }
 
 export interface LedgerEntry {
@@ -152,12 +166,16 @@ export const api = {
   stopRun: (sessionId: string) =>
     request<{ status: string }>(`/run/${sessionId}/stop`, { method: "POST" }),
   generateProbe: (body: { property_key: string; frame_alias?: string }) =>
-    request<Probe>("/probes/generate", { method: "POST", body: JSON.stringify(body) }),
+    request<GeneratedProbe>("/probes/generate", { method: "POST", body: JSON.stringify(body) }),
   postProbe: (body: { text: string; property_key?: string; frame_alias?: string; session_id?: string }) =>
-    request<{ probe_id: number; tweet_id: string; url: string }>("/probes/post", {
+    request<{ probe_id: string; tweet_id: string; url: string }>("/probes/post", {
       method: "POST",
       body: JSON.stringify(body),
     }),
   poll: () => request<{ replies: unknown[] }>("/probes/poll", { method: "POST" }),
   config: () => request<AppConfig>("/config"),
+  reviewConfirm: (probeId: string) =>
+    request<{ status: string }>(`/review/${probeId}/confirm`, { method: "POST" }),
+  reviewDeny: (probeId: string) =>
+    request<{ status: string }>(`/review/${probeId}/deny`, { method: "POST" }),
 };

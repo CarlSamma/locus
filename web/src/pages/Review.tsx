@@ -1,9 +1,28 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ReviewItem } from "../api";
 import { EmptyState, Spinner } from "../components/ui";
 
 export default function Review() {
+  const queryClient = useQueryClient();
   const { data, isLoading, isError } = useQuery({ queryKey: ["review"], queryFn: api.review });
+
+  const confirm = useMutation({
+    mutationFn: (id: string) => api.reviewConfirm(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["review"] });
+      queryClient.invalidateQueries({ queryKey: ["status"] });
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+    },
+  });
+
+  const deny = useMutation({
+    mutationFn: (id: string) => api.reviewDeny(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["review"] });
+      queryClient.invalidateQueries({ queryKey: ["status"] });
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+    },
+  });
 
   if (isLoading) return <Spinner label="Caricamento review…" />;
   if (isError || !data) return <EmptyState message="Errore nel caricamento della review" />;
@@ -17,7 +36,13 @@ export default function Review() {
     <div className="max-w-7xl mx-auto flex flex-col xl:flex-row gap-6">
       <div className="flex-1 flex flex-col gap-4">
         {items.map((item) => (
-          <ReviewCard key={item.id} item={item} />
+          <ReviewCard
+            key={item.id}
+            item={item}
+            busy={confirm.isPending || deny.isPending}
+            onConfirm={() => confirm.mutate(item.id)}
+            onDeny={() => deny.mutate(item.id)}
+          />
         ))}
       </div>
       <div className="w-full xl:w-[280px] flex-shrink-0">
@@ -57,13 +82,18 @@ function ScoreDistribution({ items, maxScore }: { items: ReviewItem[]; maxScore:
   );
 }
 
-function ReviewCard({ item }: { item: ReviewItem }) {
-  let cls: Record<string, unknown> | null = null;
-  try {
-    if (item.classification) cls = JSON.parse(item.classification);
-  } catch {
-    cls = null;
-  }
+function ReviewCard({
+  item,
+  busy,
+  onConfirm,
+  onDeny,
+}: {
+  item: ReviewItem;
+  busy: boolean;
+  onConfirm: () => void;
+  onDeny: () => void;
+}) {
+  const cls = item.classification as Record<string, unknown> | null;
   return (
     <div className="bg-surface rounded-lg border border-white/5 p-5 flex flex-col gap-3">
       <div className="flex items-center gap-2 flex-wrap">
@@ -72,7 +102,7 @@ function ReviewCard({ item }: { item: ReviewItem }) {
           [{item.property_key}]
         </span>
         <span className="font-mono text-[10px] text-textSecondary bg-white/5 px-1.5 py-0.5 rounded">
-          {item.frame}
+          {item.frame_alias}
         </span>
         <span
           className={`ml-auto font-mono text-sm font-bold ${
@@ -101,10 +131,18 @@ function ReviewCard({ item }: { item: ReviewItem }) {
         </div>
       )}
       <div className="flex items-center gap-3 pt-1">
-        <button className="bg-primary text-console px-4 py-1.5 rounded-lg font-headline font-bold text-xs hover:shadow-[0_0_15px_rgba(79,209,197,0.4)] transition-all">
+        <button
+          onClick={onConfirm}
+          disabled={busy}
+          className="bg-primary text-console px-4 py-1.5 rounded-lg font-headline font-bold text-xs hover:shadow-[0_0_15px_rgba(79,209,197,0.4)] transition-all disabled:opacity-50"
+        >
           Approva
         </button>
-        <button className="border border-white/15 text-textPrimary px-4 py-1.5 rounded-lg font-headline font-bold text-xs hover:bg-white/5 transition-all">
+        <button
+          onClick={onDeny}
+          disabled={busy}
+          className="border border-white/15 text-textPrimary px-4 py-1.5 rounded-lg font-headline font-bold text-xs hover:bg-white/5 transition-all disabled:opacity-50"
+        >
           Scarta
         </button>
       </div>

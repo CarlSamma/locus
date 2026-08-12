@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +49,7 @@ from locus.memory import Memory
 from locus.models import Frame, Property
 from locus.select import in_phase5, remaining_entropy, total_remaining_entropy
 from locus.target import TargetClient
+from locus.trust import sanitize_untrusted
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +323,7 @@ def _register_routes(app: FastAPI) -> None:
     async def review(limit: int = Query(10, ge=1, le=100)) -> List[Dict[str, Any]]:
         engine = _require_engine(app)
         rows = await engine.db.fetchall(
-            "SELECT id, property_key, text, reply_text, score, status, classification "
+            "SELECT id, property_key, frame_alias, text, reply_text, score, status, classification "
             "FROM probes WHERE status = 'classified' ORDER BY score DESC LIMIT ?",
             (limit,),
         )
@@ -331,6 +333,20 @@ def _register_routes(app: FastAPI) -> None:
             d["classification"] = _parse_classification(d.pop("classification"))
             items.append(d)
         return items
+
+    @app.post("/api/review/{probe_id}/confirm")
+    async def review_confirm(probe_id: str) -> Dict[str, Any]:
+        """HITL: approva la classificazione → applica l'evidenza al ledger e alla proprietà."""
+        engine = _require_engine(app)
+        await _apply_review(engine, probe_id, verdict="confirm")
+        return {"probe_id": probe_id, "status": "confirmed"}
+
+    @app.post("/api/review/{probe_id}/deny")
+    async def review_deny(probe_id: str) -> Dict[str, Any]:
+        """HITL: scarta la classificazione → nessuna evidenza applicata, probe marcata denied."""
+        engine = _require_engine(app)
+        await _apply_review(engine, probe_id, verdict="deny")
+        return {"probe_id": probe_id, "status": "denied"}
 
     # ── Ledger ──────────────────────────────────────────────
 
@@ -577,6 +593,90 @@ async def _persist_probe(
     )
     await engine.db.commit()
     return probe_id
+
+
+async def _apply_review(engine: Any, probe_id: str, *, verdict: str) -> None:
+    """Applica l'esito HITL su una probe classificata.
+
+    ``confirm`` → l'evidenza della classificazione viene applicata (ledger,
+    stato/voti proprietà, leak → intel), replicando la logica di
+    ``Engine._extract``; la probe passa a stato ``confirmed``.
+
+    ``deny`` → la classificazione è scartata: nessuna evidenza viene applicata
+    al ledger né alla proprietà; la probe passa a stato ``denied``.
+
+    Lancia HTTPException 404 se la probe non esiste, 409 se non è nello stato
+    ``classified`` atteso.
+    """
+    row = await engine.db.fetchone(
+        "SELECT id, session_id, property_key, status, reply_text, classification FROM probes WHERE id = ?",
+        (probe_id,),
+    )
+    if row is None:
+        raise HTTPException(404, "probe not found")
+    if row["status"] != "classified":
+        raise HTTPException(409, "probe is not classified")
+
+    _outcome_by_pattern = {
+        "yes": "confirmed",
+        "no": "denied",
+        "block": "blocked",
+        "evasive": "partial",
+        "ambiguous": "partial",
+    }
+    ts = _utcnow_iso()
+    if verdict == "confirm":
+        classification = _parse_classification(row["classification"])
+        outcome = _outcome_by_pattern.get(classification["pattern"], "partial")
+        probe_id_v = row["id"]
+        await engine.db.execute(
+            "INSERT INTO ledger (id, property_key, outcome, probe_id, ts, note) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                str(uuid.uuid4()),
+                row["property_key"],
+                outcome,
+                probe_id_v,
+                ts,
+                f"HITL confirm: {classification.get('rationale', '')}",
+            ),
+        )
+        await engine.db.execute(
+            "UPDATE probes SET status = 'confirmed' WHERE id = ?",
+            (probe_id_v,),
+        )
+        # Aggiorna la proprietà solo sugli esiti decisivi (yes/no), come
+        # in Engine._extract.
+        if classification["pattern"] in ("yes", "no"):
+            prop_row = await engine.db.fetchone(
+                "SELECT key, state, votes FROM properties WHERE key = ?",
+                (row["property_key"],),
+            )
+            if prop_row is not None:
+                state = "confirmed" if outcome == "confirmed" else "denied"
+                votes = (prop_row["votes"] or 0) + 1
+                await engine.db.execute(
+                    "UPDATE properties SET state = ?, votes = ? WHERE key = ?",
+                    (state, votes, row["property_key"]),
+                )
+        # Leak → intel (sanitizzati, come in _extract).
+        for leak in classification.get("leaks", []):
+            await engine.db.execute(
+                "INSERT INTO intel (id, session_id, kind, text, note, ts) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    str(uuid.uuid4()),
+                    row["session_id"],
+                    "leak",
+                    sanitize_untrusted(str(leak)),
+                    "HITL confirm",
+                    ts,
+                ),
+            )
+    else:  # deny
+        await engine.db.execute(
+            "UPDATE probes SET status = 'denied' WHERE id = ?",
+            (row["id"],),
+        )
+    await engine.db.commit()
 
 
 def _require_engine(app: FastAPI):

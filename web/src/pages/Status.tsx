@@ -132,7 +132,7 @@ function RecentProbes() {
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[10px] text-tertiary">{p.score}</span>
                 <span className="font-mono text-[10px] text-textSecondary bg-white/5 px-1.5 py-0.5 rounded">
-                  {p.frame}
+                  {p.frame_alias}
                 </span>
               </div>
             </div>

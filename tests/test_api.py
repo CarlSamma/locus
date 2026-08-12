@@ -320,6 +320,154 @@ def test_health_endpoint(client: TestClient) -> None:
     assert resp.json()["ok"] is True
 
 
+def test_review_confirm_missing_probe_404(client: TestClient) -> None:
+    resp = client.post("/api/review/nope/confirm")
+    assert resp.status_code == 404
+
+
+async def test_review_non_classified_409(config: LocusConfig, db: Database) -> None:
+    now = "2026-08-11T00:00:00+00:00"
+    await db.execute(
+        "INSERT INTO probes "
+        "(id, session_id, property_key, frame_alias, text, tweet_id, posted_at, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("p-pending", "s1", "segment_count", "neutral", "hello", "t1", now, "posted", now),
+    )
+    await db.commit()
+    engine = _build_engine(config, db, FakeXClient())
+    app = create_app(config=config, engine=engine)
+    with TestClient(app) as c:
+        assert c.post("/api/review/p-pending/confirm").status_code == 409
+        assert c.post("/api/review/p-pending/deny").status_code == 409
+
+
+async def test_review_confirm_applies_evidence(config: LocusConfig, db: Database) -> None:
+    """HITL confirm: ledger + stato/voti proprietà + intel leak, probe → confirmed."""
+    import json as _json
+
+    now = "2026-08-11T00:00:00+00:00"
+    await db.execute(
+        "INSERT INTO probes "
+        "(id, session_id, property_key, frame_alias, text, tweet_id, posted_at, reply_text, "
+        "reply_id, classification, score, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "p-confirm",
+            "s1",
+            "segment_count",
+            "neutral",
+            "quanti segmenti?",
+            "t1",
+            now,
+            "due parole",
+            "r1",
+            _json.dumps(
+                {
+                    "pattern": "yes",
+                    "boolean": True,
+                    "score": 8,
+                    "leaks": ["it is 2 words"],
+                    "rationale": "bot confirmed directly",
+                }
+            ),
+            8.0,
+            "classified",
+            now,
+        ),
+    )
+    await db.commit()
+
+    engine = _build_engine(config, db, FakeXClient())
+    app = create_app(config=config, engine=engine)
+    with TestClient(app) as c:
+        # Verifica preventiva: la probe appare in review.
+        rev = c.get("/api/review?limit=10").json()
+        assert any(r["id"] == "p-confirm" for r in rev)
+        assert any(r["frame_alias"] == "neutral" for r in rev)
+
+        resp = c.post("/api/review/p-confirm/confirm")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "confirmed"
+
+        # Probe ora confirmed → non più in review.
+        rev2 = c.get("/api/review?limit=10").json()
+        assert all(r["id"] != "p-confirm" for r in rev2)
+
+        # Ledger aggiornato.
+        led = c.get("/api/ledger?limit=50").json()
+        entry = next((e for e in led if e["property_key"] == "segment_count"), None)
+        assert entry is not None
+        assert entry["outcome"] == "confirmed"
+        assert entry["probe_id"] == "p-confirm"
+
+        # Proprietà: stato confirmed, 1 voto.
+        props = c.get("/api/properties").json()
+        prop = next((p for p in props if p["key"] == "segment_count"), None)
+        assert prop["state"] == "confirmed"
+        assert prop["votes"] == 1
+
+        # Leak → intel.
+        intel = c.get("/api/intel?limit=50").json()
+        assert any(i["kind"] == "leak" and i["text"] == "it is 2 words" for i in intel["items"])
+
+
+async def test_review_deny_discards_evidence(config: LocusConfig, db: Database) -> None:
+    """HITL deny: nessun ledger/proprietà modificato, probe → denied."""
+    import json as _json
+
+    now = "2026-08-11T00:00:00+00:00"
+    await db.execute(
+        "INSERT INTO probes "
+        "(id, session_id, property_key, frame_alias, text, tweet_id, posted_at, reply_text, "
+        "reply_id, classification, score, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "p-deny",
+            "s1",
+            "segment_count",
+            "neutral",
+            "quanti segmenti?",
+            "t1",
+            now,
+            "due parole",
+            "r1",
+            _json.dumps(
+                {
+                    "pattern": "yes",
+                    "boolean": True,
+                    "score": 8,
+                    "leaks": [],
+                    "rationale": "bot confirmed directly",
+                }
+            ),
+            8.0,
+            "classified",
+            now,
+        ),
+    )
+    await db.commit()
+
+    engine = _build_engine(config, db, FakeXClient())
+    app = create_app(config=config, engine=engine)
+    with TestClient(app) as c:
+        resp = c.post("/api/review/p-deny/deny")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "denied"
+
+        # Probe denied → non più in review.
+        rev = c.get("/api/review?limit=10").json()
+        assert all(r["id"] != "p-deny" for r in rev)
+
+        # Nessun ledger scritto.
+        led = c.get("/api/ledger?limit=50").json()
+        assert all(x["probe_id"] != "p-deny" for x in led)
+        # Proprietà invariata (unknown, 0 voti).
+        props = c.get("/api/properties").json()
+        prop = next((p for p in props if p["key"] == "segment_count"), None)
+        assert prop["state"] == "unknown"
+        assert prop["votes"] == 0
+
+
 def test_api_routes_win_over_spa_catchall(tmp_path, config: LocusConfig, db: Database) -> None:
     """With a compiled SPA in web/dist, /api/* must not be shadowed by the
     catch-all SPA route (regression: registration order)."""

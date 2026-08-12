@@ -76,12 +76,7 @@ export default function AttackTree() {
 
 function ProbeRow({ probe, zebra }: { probe: Probe; zebra: boolean }) {
   const [open, setOpen] = useState(false);
-  let cls: Record<string, unknown> | null = null;
-  try {
-    if (probe.classification) cls = JSON.parse(probe.classification);
-  } catch {
-    cls = null;
-  }
+  const cls = probe.classification as Record<string, unknown> | null;
   return (
     <>
       <tr
@@ -94,7 +89,7 @@ function ProbeRow({ probe, zebra }: { probe: Probe; zebra: boolean }) {
             [{probe.property_key}]
           </span>
         </td>
-        <td className="px-4 py-3 text-textSecondary">{probe.frame}</td>
+        <td className="px-4 py-3 text-textSecondary">{probe.frame_alias}</td>
         <td className="px-4 py-3 text-textPrimary/80 max-w-[340px] truncate">“{probe.text}”</td>
         <td className="px-4 py-3">
           <StatusChip state={probe.status} />
