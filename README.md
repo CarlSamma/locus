@@ -19,8 +19,9 @@ Design: [`docs/plans/locus-design.md`](docs/plans/locus-design.md)
 Aprire **PowerShell** nella cartella del progetto (`D:\PROGETTI\locus`):
 
 ```powershell
-# 1) (opzionale) creare e attivare un virtualenv
-python -m venv .venv
+# 1) (opzionale) creare e attivare un virtualenv con Python 3.13
+#    (usa "py -3.13" così il venv usa SEMPRE Python 3.13)
+py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
 # 2) installare le dipendenze
@@ -37,6 +38,13 @@ cd ..
 # 5) creare il file .env con le credenziali (X + OpenRouter)
 #    copiare .env.example in .env e inserire le chiavi
 ```
+
+> ⚠️ **Importante**: usa sempre `py -3.13 -m venv .venv`, NON `python -m venv
+> .venv`. Il comando `python` può puntare per sbaglio a un altro Python e
+> ricreare un virtualenv incompatibile (errori tipo `No module named
+> 'pydantic_core._pydantic_core'` avviando la web app). `py -3.13` garantisce
+> che il venv usi Python 3.13, la versione testata e coerente con le
+> dipendenze.
 
 ## Credenziali
 
@@ -97,15 +105,20 @@ Non saltare passaggi; se un comando dà errore, fermati e controlla prima di con
 **① Installa le dipendenze Python e il pacchetto**
 
 ```powershell
-python -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 pip install -e .
 ```
 
-Se vedi `(venv)` all'inizio del prompt, la "venv" è attiva. Se `python`
-non viene trovato, controlla di avere installato **Python 3.10+** dal sito
+Se vedi `(venv)` all'inizio del prompt, la "venv" è attiva. Se `py`
+non viene trovato, controlla di avere installato **Python 3.13** dal sito
 python.org (spunta "Add to PATH" durante l'installazione).
+
+> ⚠️ Usa sempre `py -3.13 -m venv .venv`, NON `python -m venv .venv`:
+> il comando `python` può puntare a un altro Python e creare un virtualenv
+> incompatibile (errori tipo `No module named 'pydantic_core._pydantic_core'`
+> all'avvio). `py -3.13` garantisce il venv giusto.
 
 **② Installa il frontend React**
 
