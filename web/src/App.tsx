@@ -1,6 +1,7 @@
 import { Outlet, Route, Routes } from "react-router-dom";
 import { FooterStrip, Header, LiveClock, Sidebar } from "./components/Layout";
 import AttackTree from "./pages/AttackTree";
+import HackingA0Archive from "./pages/HackingA0Archive";
 import Ledger from "./pages/Ledger";
 import ProbeLab from "./pages/ProbeLab";
 import Properties from "./pages/Properties";
@@ -52,6 +53,9 @@ export default function App() {
         </Route>
         <Route element={<HeaderSlot title="Ledger & Intel" subtitle="Locus / Ledger" />}>
           <Route path="ledger" element={<Ledger />} />
+        </Route>
+        <Route element={<HeaderSlot title="HackingA0 Archive" subtitle="Locus / Q→A Database" />}>
+          <Route path="hackinga0" element={<HackingA0Archive />} />
         </Route>
         <Route element={<HeaderSlot title="Sessions" subtitle="Locus / Sessions" />}>
           <Route path="sessions" element={<Sessions />} />

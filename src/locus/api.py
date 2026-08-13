@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import aiosqlite
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -55,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 _SEED_PATH = "src/locus/data/locus_seed.json"
 _DIST_PATH = Path("web") / "dist"
+_ARHIVE_DB_PATH = Path("data") / "hackinga0_archive.db"
 
 _PROPERTY_COLS = "key, weight, prior_entropy, state, votes, value, notes"
 
@@ -542,6 +544,77 @@ def _register_routes(app: FastAPI) -> None:
         except Exception as exc:  # pragma: no cover - resilience
             health_data = {"error": str(exc)}
         return {"ok": True, "llm": health_data}
+
+    # ── HackingA0 Archive (Q→A database, DB separato) ─────────
+    @app.get("/api/hackinga0/stats")
+    async def hackinga0_stats() -> Dict[str, Any]:
+        db = _ARHIVE_DB_PATH
+        if not db.exists():
+            return {"exists": False, "total": 0, "replies": 0, "with_question": 0,
+                    "earliest": None, "latest": None}
+        async with aiosqlite.connect(db) as c:
+            c.row_factory = aiosqlite.Row
+            cur = await c.execute("SELECT COUNT(*) c FROM hackinga0_archive")
+            total = await cur.fetchone()
+            cur = await c.execute("SELECT COUNT(*) c FROM hackinga0_archive WHERE is_reply=1")
+            replies = await cur.fetchone()
+            cur = await c.execute(
+                "SELECT COUNT(*) c FROM hackinga0_archive "
+                "WHERE question_text IS NOT NULL AND question_text != ''")
+            with_q = await cur.fetchone()
+            cur = await c.execute("SELECT MIN(created_at), MAX(created_at) FROM hackinga0_archive")
+            rng = await cur.fetchone()
+        return {"exists": True, "total": total["c"], "replies": replies["c"],
+                "with_question": with_q["c"], "earliest": rng[0], "latest": rng[1]}
+
+    @app.get("/api/hackinga0/qa")
+    async def hackinga0_qa(
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+        kind: str = Query("all"),  # all | reply | post
+        has_question: bool = Query(False),
+    ) -> Dict[str, Any]:
+        db = _ARHIVE_DB_PATH
+        if not db.exists():
+            return {"total": 0, "items": []}
+        where, params = [], []
+        if kind == "reply":
+            where.append("is_reply = 1")
+        elif kind == "post":
+            where.append("is_reply = 0")
+        if has_question:
+            where.append("question_text IS NOT NULL AND question_text != ''")
+        wsql = ("WHERE " + " AND ".join(where)) if where else ""
+        async with aiosqlite.connect(db) as c:
+            c.row_factory = aiosqlite.Row
+            cur = await c.execute(
+                f"SELECT COUNT(*) c FROM hackinga0_archive {wsql}", params)
+            total = await cur.fetchone()
+            cur = await c.execute(
+                f"SELECT * FROM hackinga0_archive {wsql} "
+                "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params + [limit, offset])
+            rows = await cur.fetchall()
+        return {"total": total["c"], "items": [dict(r) for r in rows]}
+
+    @app.get("/api/hackinga0/search")
+    async def hackinga0_search(
+        q: str = Query(..., min_length=1, max_length=200),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> List[Dict[str, Any]]:
+        db = _ARHIVE_DB_PATH
+        if not db.exists():
+            return []
+        like = f"%{q}%"
+        async with aiosqlite.connect(db) as c:
+            c.row_factory = aiosqlite.Row
+            cur = await c.execute(
+                "SELECT * FROM hackinga0_archive "
+                "WHERE text LIKE ? OR question_text LIKE ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (like, like, limit))
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
 
 
 # ── Helpers ────────────────────────────────────────────────────

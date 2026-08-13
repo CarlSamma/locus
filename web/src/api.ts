@@ -96,6 +96,31 @@ export interface StatusData {
   counts: Record<string, number>;
 }
 
+export interface HackA0Entry {
+  id: string;
+  text: string | null;
+  created_at: string | null;
+  author_id: string | null;
+  is_reply: number;
+  in_reply_to_tweet_id: string | null;
+  question_text: string | null;
+  question_author_id: string | null;
+  question_user_handle: string | null;
+  conversation_id: string | null;
+  lang: string | null;
+  source: string | null;
+  fetched_at: string | null;
+}
+
+export interface HackA0Stats {
+  exists: boolean;
+  total: number;
+  replies: number;
+  with_question: number;
+  earliest: string | null;
+  latest: string | null;
+}
+
 export interface AppConfig {
   target_handle: string;
   our_bot_handle: string;
@@ -174,6 +199,18 @@ export const api = {
     }),
   poll: () => request<{ replies: unknown[] }>("/probes/poll", { method: "POST" }),
   config: () => request<AppConfig>("/config"),
+  hacka0Stats: () => request<HackA0Stats>("/hackinga0/stats"),
+  hacka0QA: (params?: { kind?: string; has_question?: boolean; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.kind) q.set("kind", params.kind);
+    if (params?.has_question) q.set("has_question", "true");
+    if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.offset) q.set("offset", String(params.offset));
+    const qs = q.toString();
+    return request<{ total: number; items: HackA0Entry[] }>(`/hackinga0/qa${qs ? `?${qs}` : ""}`);
+  },
+  hacka0Search: (q: string, limit = 50) =>
+    request<HackA0Entry[]>(`/hackinga0/search?${new URLSearchParams({ q, limit: String(limit) }).toString()}`),
   reviewConfirm: (probeId: string) =>
     request<{ status: string }>(`/review/${probeId}/confirm`, { method: "POST" }),
   reviewDeny: (probeId: string) =>

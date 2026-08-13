@@ -10,6 +10,7 @@ const NAV = [
   { to: "/attack-tree", label: "Attack Tree", icon: "account_tree" },
   { to: "/review", label: "Review", icon: "rate_review" },
   { to: "/ledger", label: "Ledger & Intel", icon: "menu_book" },
+  { to: "/hackinga0", label: "A0 Archive", icon: "database" },
   { to: "/sessions", label: "Sessions", icon: "history" },
 ];
 
