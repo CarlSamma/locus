@@ -84,6 +84,7 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=None, help="max tweet da prendere (debug)")
     ap.add_argument("--dry-run", action="store_true", help="nessuna scrittura su DB")
     ap.add_argument("--import-legacy", action="store_true", help="importa historical dal seed")
+    ap.add_argument("--import-probes", action="store_true", help="importa coppie Q→A (probe→reply) dal seed")
     ap.add_argument("--stats", action="store_true", help="mostra conteggi archivio")
     args = ap.parse_args()
 
@@ -99,6 +100,9 @@ def main() -> int:
 
     if args.import_legacy:
         return import_legacy()
+
+    if args.import_probes:
+        return import_probes()
 
     if args.fetch:
         return fetch(args.limit, args.dry_run)
@@ -266,6 +270,56 @@ def import_legacy() -> int:
     conn.commit()
     tot = conn.execute("SELECT count(*) FROM hackinga0_archive").fetchone()[0]
     print(f"[legacy] importati {inserted} tweet storici; totale archivio={tot}")
+    return 0
+
+
+def import_probes() -> int:
+    """Importa le coppie Q→A reali del seed (probe -> reply di @HackingA0).
+
+    Ogni voce: id = reply_id (o sintetico), text = reply (risposta),
+    question_text = probe (domanda), in_reply_to_tweet_id = tweet_id della probe.
+    """
+    data = json.loads(SEED.read_text(encoding="utf-8"))
+    probes = data.get("probes", [])
+    conn = get_conn()
+    inserted = 0
+    skipped = 0
+    for i, p in enumerate(probes):
+        reply = (p.get("reply_text") or "").strip()
+        question = (p.get("text") or "").strip()
+        if not reply or not question:
+            continue
+        rid = p.get("reply_id")
+        if not rid:
+            rid = f"probe:{p.get('probe_id', i)}"
+        exists = conn.execute(
+            "SELECT 1 FROM hackinga0_archive WHERE id=?", (str(rid),)).fetchone()
+        if exists:
+            skipped += 1
+            continue
+        upsert(conn, {
+            "id": str(rid),
+            "text": reply,
+            "created_at": None,
+            "author_id": "2051911746969812998",
+            "is_reply": 1,
+            "in_reply_to_tweet_id": str(p.get("tweet_id")) if p.get("tweet_id") else None,
+            "question_text": question,
+            "question_author_id": None,
+            "question_user_handle": None,
+            "conversation_id": None,
+            "lang": None,
+            "source": "seed:probe-" + str(p.get("source", "unknown")),
+            "fetched_at": now_iso(),
+        })
+        inserted += 1
+    conn.commit()
+    withq = conn.execute(
+        "SELECT count(*) FROM hackinga0_archive "
+        "WHERE question_text IS NOT NULL AND question_text != ''").fetchone()[0]
+    tot = conn.execute("SELECT count(*) FROM hackinga0_archive").fetchone()[0]
+    print(f"[probes] importate {inserted} coppie Q→A (skippate {skipped}); "
+          f"totale archivio={tot}, con_domanda={withq}")
     return 0
 
 
