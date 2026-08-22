@@ -133,7 +133,7 @@ class ProbeGenerator:
         Returns:
             Il testo del probe (gia' limitato a ``MAX_PROBE_CHARS``).
         """
-        frame = frame or self._phase5_frame()
+        frame = frame or self.phase5_frame()
         user = self._build_phase5_prompt(segment, frame, context)
         result = await self.llm.generate_json(
             system=_PHASE5_SYSTEM,
@@ -241,7 +241,7 @@ class ProbeGenerator:
         )
 
     @staticmethod
-    def _phase5_frame() -> Frame:
+    def phase5_frame() -> Frame:
         """Frame Phase5 dedicato (fallback del motore se manca P9 nel DB)."""
         return Frame(
             alias="P9 Extractor Prime",

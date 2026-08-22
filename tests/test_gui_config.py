@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
-import pytest
-
 from locus.config import LocusConfig
 from locus.db import Database
 from locus.seed import import_seed, load_seed

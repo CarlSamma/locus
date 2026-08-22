@@ -21,22 +21,32 @@ from locus.models import Property
 from locus.select import remaining_entropy
 
 
-def _build_engine(config: LocusConfig, dry_run: bool):
+def _build_engine(
+    config: LocusConfig,
+    dry_run: bool,
+    *,
+    transport=None,
+    x_transport=None,
+):
     from locus.classify import Classifier
     from locus.engine import Engine
     from locus.llm import LLMClient
     from locus.memory import Memory
     from locus.target import TargetClient
 
-    llm = LLMClient(config)
-    target = TargetClient(config)
+    db = Database()
+    llm = LLMClient(config, transport=transport)
+    target = TargetClient(config, transport=x_transport)
     engine = Engine(
         config,
-        Database(),
+        db,
         llm,
         target,
         classifier=Classifier(llm, config),
-        memory=Memory(Database()),
+        # Stessa istanza di Database del motore: un Database separato non
+        # verrebbe mai inizializzato e memory.recall_texts() crasherebbe alla
+        # prima iterazione (RuntimeError "Database not initialized").
+        memory=Memory(db),
     )
     return engine
 

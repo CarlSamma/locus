@@ -222,9 +222,13 @@ class Engine:
         else:
             probe_text = await self.generator.generate(selected, frame, context=context)
 
-        # Dedup guard: never ask the same question twice
+        # Dedup guard: never ask the same question twice. La soglia arriva
+        # dalla config (``similarity_threshold``), non dal default interno di
+        # Memory.dedup (0.9): prima era più severa del previsto.
         if self.memory is not None:
-            dup, _ = await self.memory.dedup(probe_text)
+            dup, _ = await self.memory.dedup(
+                probe_text, threshold=self.config.similarity_threshold
+            )
             if dup:
                 logger.info("probe_dedup_skipped session_id=%s", session_id)
                 return None
@@ -398,7 +402,7 @@ class Engine:
 
         Cerca tra i frame attivi uno il cui alias/persona richiami P9 o
         "Extractor Prime"; se non e' presente (es. DB senza seed) ripiega sul
-        frame Phase5 dedicato definito in :meth:`ProbeGenerator._phase5_frame`.
+        frame Phase5 dedicato definito in :meth:`ProbeGenerator.phase5_frame`.
         """
         frames = await self._load_frames()
         active = [f for f in frames if f.status == "active"]
@@ -406,7 +410,7 @@ class Engine:
             haystack = (f.alias + " " + f.persona).lower()
             if "p9" in haystack or "extractor prime" in haystack:
                 return f
-        return ProbeGenerator._phase5_frame()
+        return ProbeGenerator.phase5_frame()
 
     async def _find_reply_for(self, tweet_id: str) -> Optional[dict]:
         """One incremental mention poll; return the reply targeting `tweet_id`.
@@ -446,7 +450,7 @@ class Engine:
         così gli off-line test possono restare deterministici.
         """
         base = self.config.poll_interval_seconds
-        jitter = getattr(self.config, "poll_interval_jitter", 0.0)
+        jitter = self.config.poll_interval_jitter
         if jitter <= 0:
             return base
         return base * (1 + random.uniform(-jitter, jitter))

@@ -201,9 +201,9 @@ class Classifier:
                     rationale=f"leak codificato ({label}) rilevato dal pre-parse deterministico",
                 )
 
-        boiletplate = detect_boilerplate(sanitized)
-        if boiletplate:
-            pattern, label = boiletplate
+        boilerplate = detect_boilerplate(sanitized)
+        if boilerplate:
+            pattern, label = boilerplate
             self.last_fast_path = "boilerplate"
             return Classification(
                 pattern=pattern,

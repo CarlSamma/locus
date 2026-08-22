@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -36,7 +37,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import aiosqlite
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -56,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 _SEED_PATH = "src/locus/data/locus_seed.json"
 _DIST_PATH = Path("web") / "dist"
-_ARHIVE_DB_PATH = Path("data") / "hackinga0_archive.db"
+_ARCHIVE_DB_PATH = Path("data") / "hackinga0_archive.db"
 
 _PROPERTY_COLS = "key, weight, prior_entropy, state, votes, value, notes"
 
@@ -180,12 +181,25 @@ def create_app(
         if assets_dir.exists():
             app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+        dist_root = dist.resolve()
+
         @app.get("/{full_path:path}")
         async def _spa(full_path: str):
-            candidate = dist / full_path
-            if full_path and candidate.is_file():
+            # La route catch-all riceve il path URL-decodificato: senza un
+            # containment check, "/..%2f..%2f.env" risolve fuori da dist/
+            # ed esfiltra file arbitrari (path traversal).
+            candidate: Optional[Path] = None
+            if full_path:
+                resolved = (dist / full_path).resolve()
+                try:
+                    resolved.relative_to(dist_root)
+                except ValueError:
+                    candidate = None
+                else:
+                    candidate = resolved if resolved.is_file() else None
+            if candidate is not None:
                 return FileResponse(candidate)
-            return FileResponse(dist / "index.html")
+            return FileResponse(dist_root / "index.html")
 
     return app
 
@@ -210,6 +224,23 @@ async def _seed(db: Database, config: LocusConfig) -> None:
 def _register_routes(app: FastAPI) -> None:
     """Registra tutti gli endpoint REST sull'app."""
     from locus.exceptions import TwitterError
+
+    async def require_token(
+        x_locus_token: Optional[str] = Header(default=None),
+    ) -> None:
+        """Dipendenza di auth per gli endpoint mutanti (POST).
+
+        Se ``api_auth_token`` non è configurato (default) l'API resta aperta —
+        tool locale. Se impostato, ogni POST deve portare l'header
+        ``X-Locus-Token`` con valore esatto (confronto a tempo costante).
+        """
+        cfg_token = app.state.config.api_auth_token
+        if cfg_token is None:
+            return
+        expected = cfg_token.get_secret_value()
+        provided = x_locus_token or ""
+        if not secrets.compare_digest(provided, expected):
+            raise HTTPException(401, "missing or invalid X-Locus-Token header")
 
     # ── Status / riepilogo ──────────────────────────────────
 
@@ -336,14 +367,14 @@ def _register_routes(app: FastAPI) -> None:
             items.append(d)
         return items
 
-    @app.post("/api/review/{probe_id}/confirm")
+    @app.post("/api/review/{probe_id}/confirm", dependencies=[Depends(require_token)])
     async def review_confirm(probe_id: str) -> Dict[str, Any]:
         """HITL: approva la classificazione → applica l'evidenza al ledger e alla proprietà."""
         engine = _require_engine(app)
         await _apply_review(engine, probe_id, verdict="confirm")
         return {"probe_id": probe_id, "status": "confirmed"}
 
-    @app.post("/api/review/{probe_id}/deny")
+    @app.post("/api/review/{probe_id}/deny", dependencies=[Depends(require_token)])
     async def review_deny(probe_id: str) -> Dict[str, Any]:
         """HITL: scarta la classificazione → nessuna evidenza applicata, probe marcata denied."""
         engine = _require_engine(app)
@@ -392,7 +423,7 @@ def _register_routes(app: FastAPI) -> None:
         )
         return [_row_to_dict(r) for r in rows]
 
-    @app.post("/api/sessions")
+    @app.post("/api/sessions", dependencies=[Depends(require_token)])
     async def create_session() -> Dict[str, Any]:
         engine = _require_engine(app)
         session_id = await engine.start_session()
@@ -400,7 +431,7 @@ def _register_routes(app: FastAPI) -> None:
 
     # ── Run (sessione in background) ────────────────────────
 
-    @app.post("/api/run")
+    @app.post("/api/run", dependencies=[Depends(require_token)])
     async def run(req: RunRequest) -> Dict[str, Any]:
         engine = _require_engine(app)
         session_id = req.session_id or await engine.start_session()
@@ -447,7 +478,7 @@ def _register_routes(app: FastAPI) -> None:
                 session["error"] = str(exc)
         return session
 
-    @app.post("/api/run/{session_id}/stop")
+    @app.post("/api/run/{session_id}/stop", dependencies=[Depends(require_token)])
     async def stop_run(session_id: str) -> Dict[str, Any]:
         task = app.state.runs.get(session_id)
         if task is None or task.done():
@@ -457,7 +488,7 @@ def _register_routes(app: FastAPI) -> None:
 
     # ── Probe Lab (generate / post / poll) ──────────────────
 
-    @app.post("/api/probes/generate")
+    @app.post("/api/probes/generate", dependencies=[Depends(require_token)])
     async def generate(req: GenerateRequest) -> Dict[str, Any]:
         engine = _require_engine(app)
         prop_row = await engine.db.fetchone(
@@ -484,7 +515,7 @@ def _register_routes(app: FastAPI) -> None:
         text = await engine.generator.generate(prop, frame)
         return {"text": text, "property_key": req.property_key, "frame_alias": req.frame_alias}
 
-    @app.post("/api/probes/post")
+    @app.post("/api/probes/post", dependencies=[Depends(require_token)])
     async def post(req: PostRequest) -> Dict[str, Any]:
         engine = _require_engine(app)
         if not req.text.strip():
@@ -498,7 +529,7 @@ def _register_routes(app: FastAPI) -> None:
         url = f"https://x.com/{app.state.config.target_handle.lstrip('@')}/status/{tweet_id}"
         return {"tweet_id": tweet_id, "url": url, "session_id": session_id, "probe_id": probe_id}
 
-    @app.post("/api/probes/poll")
+    @app.post("/api/probes/poll", dependencies=[Depends(require_token)])
     async def poll(req: Optional[PollRequest] = None) -> Dict[str, Any]:
         engine = _require_engine(app)
         # since_id: accettato dal body oppure derivato dal DB come cursore
@@ -548,7 +579,7 @@ def _register_routes(app: FastAPI) -> None:
     # ── HackingA0 Archive (Q→A database, DB separato) ─────────
     @app.get("/api/hackinga0/stats")
     async def hackinga0_stats() -> Dict[str, Any]:
-        db = _ARHIVE_DB_PATH
+        db = _ARCHIVE_DB_PATH
         if not db.exists():
             return {"exists": False, "total": 0, "replies": 0, "with_question": 0,
                     "earliest": None, "latest": None}
@@ -564,8 +595,12 @@ def _register_routes(app: FastAPI) -> None:
             with_q = await cur.fetchone()
             cur = await c.execute("SELECT MIN(created_at), MAX(created_at) FROM hackinga0_archive")
             rng = await cur.fetchone()
-        return {"exists": True, "total": total["c"], "replies": replies["c"],
-                "with_question": with_q["c"], "earliest": rng[0], "latest": rng[1]}
+        return {"exists": True,
+                "total": total["c"] if total is not None else 0,
+                "replies": replies["c"] if replies is not None else 0,
+                "with_question": with_q["c"] if with_q is not None else 0,
+                "earliest": rng[0] if rng is not None else None,
+                "latest": rng[1] if rng is not None else None}
 
     @app.get("/api/hackinga0/qa")
     async def hackinga0_qa(
@@ -574,10 +609,11 @@ def _register_routes(app: FastAPI) -> None:
         kind: str = Query("all"),  # all | reply | post
         has_question: bool = Query(False),
     ) -> Dict[str, Any]:
-        db = _ARHIVE_DB_PATH
+        db = _ARCHIVE_DB_PATH
         if not db.exists():
             return {"total": 0, "items": []}
-        where, params = [], []
+        where: List[str] = []
+        params: List[Any] = []
         if kind == "reply":
             where.append("is_reply = 1")
         elif kind == "post":
@@ -595,14 +631,14 @@ def _register_routes(app: FastAPI) -> None:
                 "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 params + [limit, offset])
             rows = await cur.fetchall()
-        return {"total": total["c"], "items": [dict(r) for r in rows]}
+        return {"total": total["c"] if total is not None else 0, "items": [dict(r) for r in rows]}
 
     @app.get("/api/hackinga0/search")
     async def hackinga0_search(
         q: str = Query(..., min_length=1, max_length=200),
         limit: int = Query(50, ge=1, le=200),
     ) -> List[Dict[str, Any]]:
-        db = _ARHIVE_DB_PATH
+        db = _ARCHIVE_DB_PATH
         if not db.exists():
             return []
         like = f"%{q}%"

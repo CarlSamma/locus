@@ -12,11 +12,14 @@ without network access.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from locus.config import LocusConfig
 from locus.exceptions import TwitterError
+
+logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 RETRY_BACKOFF_BASE = 2  # seconds
@@ -176,7 +179,12 @@ class TargetClient:
             )
             if response.data:
                 self._our_user_id = str(response.data.id)
-        except Exception:
+        except Exception as exc:
+            # Non ingoiare l'errore: credenziali/handle sbagliati altrimenti
+            # degradano a poll silenziosamente vuoti.
+            logger.warning(
+                "resolve_user_failed handle=%s error=%s", handle, exc
+            )
             self._our_user_id = None
         return self._our_user_id
 

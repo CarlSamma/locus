@@ -12,7 +12,6 @@ from locus.exceptions import LLMError
 from locus.llm import LLMClient, ModelTier
 from locus.target import TargetClient
 
-
 # ── Fake LLM transport ─────────────────────────────────────────
 
 

@@ -58,5 +58,12 @@ disallow_untyped_defs = false
 explicit_package_bases = true
 namespace_packages = true
 
+[[tool.mypy.overrides]]
+module = ["tweepy"]
+ignore_missing_imports = true
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+locus = ["py.typed"]

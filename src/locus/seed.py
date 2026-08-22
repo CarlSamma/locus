@@ -57,7 +57,8 @@ def _deterministic_id(*parts: str) -> str:
 def load_seed(path: str) -> Dict[str, Any]:
     """Load and return the raw SSOT JSON structure."""
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        data: Dict[str, Any] = json.load(f)
+    return data
 
 
 async def import_seed(
@@ -191,14 +192,24 @@ async def import_seed(
             "VALUES (?, ?, ?, ?, ?, ?)",
             [
                 (
-                    str(uuid.uuid4()),
+                    # Id deterministico ancorato alla posizione nella lista
+                    # (il SSOT è append-only): stesso seed → stessi id, quindi
+                    # anche un re-import forzato non duplica le righe. Il
+                    # contenuto da solo non basta: il log contiene volutamente
+                    # eventi ripetuti (2865 righe, 55 testi unici).
+                    _deterministic_id(
+                        "intel",
+                        str(idx),
+                        str(i.get("kind") or "leak"),
+                        str(i.get("text") or ""),
+                    ),
                     "",
                     str(i.get("kind") or "leak"),
                     str(i.get("text") or ""),
                     str(i.get("note") or ""),
                     _utcnow_iso(),
                 )
-                for i in intel
+                for idx, i in enumerate(intel)
             ],
         )
         counts["intel"] = len(intel)

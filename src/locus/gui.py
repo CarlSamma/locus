@@ -15,19 +15,16 @@ asyncio runs in a background thread so the Tk mainloop never blocks.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
+import os
 import threading
-from typing import Any, List, Optional
-
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
+from typing import List, Optional
 
-from locus.classify import Classifier
 from locus.config import LocusConfig
 from locus.db import Database
 from locus.llm import LLMClient
-from locus.memory import Memory
 from locus.models import Frame, Property
 from locus.probe import ProbeGenerator
 from locus.seed import import_seed, load_seed
@@ -180,17 +177,18 @@ class LocusGui:
 
     def _start_loop(self) -> None:
         self._loop = asyncio.new_event_loop()
+        loop = self._loop
 
         def _run() -> None:
-            asyncio.set_event_loop(self._loop)
-            self._loop.run_forever()
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
 
         threading.Thread(target=_run, daemon=True).start()
         self._submit(self._initialize())
 
     async def _initialize(self) -> None:
         await self.db.initialize(self.config.db_path)
-        if __import__("os").path.exists(_SEED_PATH):
+        if os.path.exists(_SEED_PATH):
             seed = load_seed(_SEED_PATH)
             await import_seed(self.db, seed)
         else:
@@ -289,8 +287,11 @@ class LocusGui:
         self._submit(self._generate_async(prop, frame))
 
     async def _generate_async(self, prop: Property, frame: Frame) -> None:
+        generator = self.generator
+        if generator is None:
+            return
         try:
-            text = await self.generator.generate(prop, frame)
+            text = await generator.generate(prop, frame)
         except Exception as exc:
             self._log(f"generate error: {exc}")
             return
@@ -315,8 +316,13 @@ class LocusGui:
         self._submit(self._post_async(text))
 
     async def _post_async(self, text: str) -> None:
+        target = self.target
+        if target is None:
+            self._log("client X non inizializzato")
+            self.root.after(0, self._reset_post_button)
+            return
         try:
-            tweet_id = await self.target.post_probe(text)
+            tweet_id = await target.post_probe(text)
         except Exception as exc:
             self._log(f"post error: {exc}")
             self.root.after(0, self._reset_post_button)
@@ -338,8 +344,12 @@ class LocusGui:
         self._submit(self._poll_async())
 
     async def _poll_async(self) -> None:
+        target = self.target
+        if target is None:
+            self._log("client X non inizializzato")
+            return
         try:
-            replies = await self.target.poll_replies()
+            replies = await target.poll_replies()
         except Exception as exc:
             self._log(f"poll error: {exc}")
             return

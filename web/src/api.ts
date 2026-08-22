@@ -64,7 +64,7 @@ export interface LedgerEntry {
   property_key: string;
   outcome: string;
   ts: string;
-  probe_id: number | null;
+  probe_id: string | null;
 }
 
 export interface IntelEntry {

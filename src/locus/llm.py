@@ -186,10 +186,11 @@ class LLMClient:
             config.llm_model_hard,
             config.llm_model_primary,
         ]
+        # Retry configurabile: il default storico resta 3 (attributo di classe),
+        # ma ora il valore arriva dalla config (``llm_max_retries``).
+        self.max_retries = max(1, int(config.llm_max_retries))
 
     def _get_transport(self):
-        if self._transport is not None:
-            return self._transport
         if self._transport is None:
             from openai import AsyncOpenAI
 
@@ -206,7 +207,8 @@ class LLMClient:
     def _resolve_model(self, tier: ModelTier, explicit_model: Optional[str] = None) -> str:
         if explicit_model:
             return explicit_model
-        return self._models.get(tier, self._models[ModelTier.PRIMARY])
+        model = self._models.get(tier, self._models[ModelTier.PRIMARY])
+        return str(model)
 
     def _get_fallback_models(self, primary_model: str) -> list[str]:
         return [m for m in self._fallback_chain if m != primary_model]
@@ -292,7 +294,7 @@ class LLMClient:
         last_error: Optional[Exception] = None
         transport = self._get_transport()
 
-        for attempt in range(self.MAX_RETRIES):
+        for attempt in range(self.max_retries):
             try:
                 kwargs: dict[str, Any] = {
                     "model": model,
@@ -308,8 +310,8 @@ class LLMClient:
 
                 response = await transport.chat.completions.create(**kwargs)
 
-                content = response.choices[0].message.content
-                if not content:
+                raw_content = response.choices[0].message.content
+                if not raw_content:
                     raise LLMError("Empty response from LLM", model=model)
 
                 if response.usage:
@@ -321,19 +323,19 @@ class LLMClient:
                     )
                 else:
                     self._usage.record(model=model, success=True)
-                return content.strip()
+                return str(raw_content).strip()
 
             except Exception as e:
                 last_error = e
                 # Gap G: fail fast sugli errori client 4xx; retry solo su 5xx/429/timeout/connessione.
-                if not self._is_retriable(e) or attempt >= self.MAX_RETRIES - 1:
+                if not self._is_retriable(e) or attempt >= self.max_retries - 1:
                     break
                 wait_time = self.RETRY_BASE_DELAY ** (attempt + 1)
                 await asyncio.sleep(wait_time)
 
         self._usage.record(model=model, success=False)
         raise LLMError(
-            f"LLM call failed after {self.MAX_RETRIES} retries: {last_error}",
+            f"LLM call failed after {self.max_retries} retries: {last_error}",
             model=model,
             original=last_error,
         )
@@ -404,7 +406,8 @@ class LLMClient:
         obj_match = _JSON_OBJECT_RE.search(cleaned)
         if obj_match:
             try:
-                return json.loads(obj_match.group(0))
+                parsed: dict[str, Any] = json.loads(obj_match.group(0))
+                return parsed
             except json.JSONDecodeError:
                 pass
         raise LLMError(
@@ -430,17 +433,18 @@ class LLMClient:
                     "response",
                     "outputs",
                 ):
-                    if key in result and isinstance(result[key], list):
-                        return result[key]
+                    value = result.get(key)
+                    if isinstance(value, list):
+                        return value
                 return [result]
         except json.JSONDecodeError:
             pass
         list_match = _JSON_ARRAY_RE.search(cleaned)
         if list_match:
             try:
-                result = json.loads(list_match.group(0))
-                if isinstance(result, list):
-                    return result
+                parsed_list: list[Any] = json.loads(list_match.group(0))
+                if isinstance(parsed_list, list):
+                    return parsed_list
             except json.JSONDecodeError:
                 pass
         lines = [

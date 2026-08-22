@@ -8,7 +8,7 @@ import pytest
 
 from locus.config import LocusConfig
 from locus.db import Database
-from locus.models import Classification, Probe, Property
+from locus.models import Probe, Property
 
 
 @pytest.fixture

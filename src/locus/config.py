@@ -158,4 +158,13 @@ class LocusConfig(BaseSettings):
         description="Lingue alternate per la generazione dei probe (round-robin)",
     )
 
+    # ── Web API ───────────────────────────────────────────────
+    # Token opzionale per gli endpoint mutanti (POST): se impostato, ogni
+    # richiesta mutante deve portare l'header ``X-Locus-Token``. Con None
+    # (default) l'API resta aperta come tool locale — comportamento invariato.
+    api_auth_token: Optional[SecretStr] = Field(
+        default=None,
+        description="Token per proteggere i POST dell'API (header X-Locus-Token); None = API aperta",
+    )
+
     model_config = {"env_prefix": "LOCUS_", "env_file": ".env", "extra": "ignore"}

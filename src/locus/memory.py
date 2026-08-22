@@ -44,7 +44,8 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
     norm_b = sum(x * x for x in b) ** 0.5
     if norm_a == 0 or norm_b == 0:
         return 0.0
-    return dot / (norm_a * norm_b)
+    similarity: float = dot / (norm_a * norm_b)
+    return similarity
 
 
 class Embedder(Protocol):
